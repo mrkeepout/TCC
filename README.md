@@ -10,7 +10,7 @@ Diante disso, torna-se relevante investigar como integrar princípios de LLM sec
 ## 2. Problema de pesquisa
 A adoção de LLMs e agentes autônomos para automatizar fluxos de atendimento, comunicação com hóspedes e operações internas promete ganhos significativos de eficiência e redução de esforço humano. Entretanto, a tramitação de dados pessoais (nomes, documentos, contatos, placas de veículos, dados de reserva etc.) em prompts e respostas pode levar a violações da LGPD, sobretudo em razão de riscos de vazamento, uso indevido e reidentificação de titulares.[^1][^10][^2][^3]
 
-Ao mesmo tempo, ataques de prompt injection — diretos ou indiretos — podem induzir o agente a ignorar políticas de segurança, revelar informações de outros hóspedes, ou disparar ações administrativas não autorizadas por meio de integrações de API. Esses riscos se agravam quando a orquestração de fluxos envolve múltiplos sistemas, acesso a documentos e serviços externos, e quando o ambiente de rede não segue princípios de Zero Trust.[^4][^5][^7][^8][^9]
+Ao mesmo tempo, ataques de prompt injection — diretos ou indiretos — podem induzir o agente a ignorar políticas de segurança, revelar informações de outros hóspedes ou disparar ações administrativas não autorizadas por meio de integrações de API. Esses riscos se agravam quando a orquestração de fluxos envolve múltiplos sistemas, acesso a documentos e serviços externos, e quando o ambiente de rede não segue princípios de Zero Trust.[^4][^5][^7][^8][^9]
 
 Dessa forma, o problema científico pode ser formulado da seguinte maneira:
 
@@ -21,11 +21,11 @@ Essa formulação deixa claro o recorte (aluguel de temporada), o artefato centr
 Desenvolver e avaliar uma arquitetura de automação segura, baseada em agentes de IA generativa, para a orquestração de atendimento e gestão operacional em aluguéis de temporada, garantindo resiliência contra ataques direcionados ao modelo (LLM Sec) e proteção de dados pessoais sensíveis em conformidade com a LGPD.
 ## 4. Objetivos específicos
 Os objetivos específicos podem ser organizados em dois eixos complementares (Aluno 1 – orquestração e agente; Aluno 2 – segurança, infraestrutura e privacidade):
-### 4.1. Foco 1 – Engenharia do Agente e Orquestração (Aluno 1)
+### 4.1. Foco 1 – Engenharia do Agente e Orquestração (Ponto focal: Gabriel)
 - Implementar um orquestrador de fluxos de trabalho (por exemplo, n8n ou equivalente) em ambiente conteinerizado (Docker), responsável por gerenciar o estado da aplicação e a coordenação das chamadas ao LLM e às APIs externas.
 - Projetar e implementar o raciocínio do agente, utilizando técnicas de prompt engineering avançado, function calling e ferramentas (tools), de forma que ele seja capaz de interpretar intenções dos usuários, consultar dados estruturados, gerar documentos dinâmicos (por exemplo, PDFs com regras de condomínio e instruções de check-in) e interagir com APIs de calendário e precificação (como PriceLabs ou similar) em um fluxo automatizado.
 - Definir e coletar métricas de desempenho do agente, tais como latência de resposta, taxa de sucesso em decisões autônomas (por exemplo, classificação correta de intenções, escolha correta de ações) e redução do tempo total de execução do fluxo operacional em comparação com o processo manual.
-### 4.2. Foco 2 – Segurança, Infraestrutura e Privacidade (Aluno 2)
+### 4.2. Foco 2 – Segurança, Infraestrutura e Privacidade (Ponto focal: Matheus)
 - Projetar uma arquitetura de rede com base em princípios de Zero Trust, restringindo o acesso administrativo ao orquestrador e a outros componentes sensíveis exclusivamente via túneis VPN criptografados (por exemplo, WireGuard), com segmentação e regras de roteamento estritas (por exemplo, utilizando MikroTik ou firewalls equivalentes).[^11][^6][^12][^13][^14]
 - Projetar e implementar um middleware de Data Loss Prevention (DLP) capaz de inspecionar, em tempo real, o tráfego de prompts e respostas entre a aplicação e o LLM, identificando e mascarando (redaction) dados sensíveis como nomes, documentos, placas de veículos e outras informações que permitam identificar indivíduos, antes do envio ao modelo.[^1][^10][^2][^3]
 - Desenvolver e validar guardrails de segurança para detecção e mitigação de ataques de prompt injection e jailbreak, combinando regras estáticas, filtragem de entradas e saídas e, possivelmente, uso de modelos auxiliares para classificação de prompts maliciosos.[^4][^5][^7][^8][^9]
@@ -41,7 +41,7 @@ A pesquisa terá natureza **aplicada**, com abordagem **experimental** e enfoque
    - Modelagem da arquitetura de referência do sistema, com diagrama de componentes (orquestrador, serviços de IA, middleware de DLP, banco de dados, firewalls, VPN, painéis administrativos), fluxos de dados e zonas de rede.
 
 3. **Implementação do orquestrador e do agente**  
-   - Configuração do ambiente conteinerizado (Docker) com o orquestrador de fluxos (n8n ou equivalente) e serviços de apoio.  
+   - Configuração do ambiente contêinerizado (Docker) com o orquestrador de fluxos (n8n ou equivalente) e serviços de apoio.  
    - Implementação dos fluxos principais: onboarding de hóspedes, envio de regras de condomínio, geração de vouchers e mensagens automatizadas.  
    - Implementação do agente LLM com prompts de sistema, tools/function calling e lógica para consulta de dados e geração de documentos.
 
@@ -62,7 +62,7 @@ A pesquisa terá natureza **aplicada**, com abordagem **experimental** e enfoque
    - Métricas de infraestrutura: latência adicionada pela camada de DLP, utilização de recursos, impacto na escalabilidade.  
    - Métricas de segurança: taxa de detecção de ataques de prompt injection, taxa de falsos positivos e falsos negativos nos bloqueios de segurança.  
    - Métricas de qualidade do modelo: incidência de alucinações em respostas críticas, precisão na interpretação de intenções e na execução de ações.  
-   - Comparação do desempenho do processo automatizado com um baseline manual ou semi-automatizado (quando viável).
+   - Comparação do desempenho do processo automatizado com um baseline manual ou semiautomatizado (quando viável).
 
 8. **Discussão dos resultados e elaboração da monografia**  
    - Análise crítica dos resultados obtidos, identificando trade-offs entre segurança, privacidade, desempenho e usabilidade.  
@@ -88,7 +88,7 @@ Como resultados concretos, espera-se:
 ## 8. Viabilidade e contribuições
 A proposta é viável para um TCC em dupla em Ciência/Engenharia de Computação, pois permite uma divisão clara de responsabilidades entre engenharia de orquestração/IA e segurança/infraestrutura, mantendo forte integração entre as partes.
 
-Do ponto de vista científico e tecnológico, o trabalho contribui ao:
+Do ponto de vista científico e tecnológico, o trabalho contribui para:
 
 - Integrar, em um caso de uso concreto, conceitos de LLM security, Zero Trust, DLP e LGPD, um tema emergente na literatura e na prática profissional.[^4][^1][^5][^6][^10][^7][^2][^8][^9][^3]
 - Propor e avaliar um arranjo arquitetural reproduzível que pode servir como referência para outras organizações que desejam adotar agentes autônomos com requisitos rígidos de segurança.
