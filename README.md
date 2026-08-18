@@ -60,7 +60,7 @@ Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de hera
 pip3 install profissa_lft
 
 # 2. Este repositório
-git clone https://github.com/<usuario>/<repo>.git
+git clone https://github.com/<mrkeepout>/<repo>.git
 cd <repo>
 
 # 3. Dependências do LFT, se necessário
@@ -97,9 +97,9 @@ O andamento é acompanhado pelas **[Milestones](../../milestones)** e pelo board
 
 | Milestone | Entrega |
 |---|---|
-| M0 · Setup e fundamentação | 31/ago/2026 |
-| M1 · Implementação dos ataques | 30/set/2026 |
-| M2 · Dados + detecção | 31/out/2026 |
+| M0 · Setup e fundamentação | 19/ago/2026 |
+| M1 · Implementação dos ataques | 26/ago/2026 |
+| M2 · Dados + detecção | 02/set/2026 |
 | M3 · Draft completo do artigo | 30/nov/2026 |
 | M4 · Revisão e finalização | 12/dez/2026 |
 
@@ -107,7 +107,7 @@ O andamento é acompanhado pelas **[Milestones](../../milestones)** e pelo board
 
 ## Aviso ético e legal
 
-Este repositório contém **código de ataque destinado exclusivamente a experimentação acadêmica controlada** dentro do testbed LFT. O objetivo é o estudo de detecção e defesa. **Não** utilize estas ferramentas contra sistemas, redes ou serviços de terceiros sem autorização — fazê-lo é ilegal e contraria o propósito deste trabalho.
+Este repositório contém **código de ataque destinado exclusivamente à experimentação acadêmica controlada** dentro do testbed LFT. O objetivo é o estudo de detecção e defesa. **Não** utilize estas ferramentas contra sistemas, redes ou serviços de terceiros sem autorização — fazê-lo é ilegal e contraria o propósito deste trabalho.
 
 ---
 
@@ -116,7 +116,7 @@ Este repositório contém **código de ataque destinado exclusivamente a experim
 - **Gabriel** — [@handle](https://github.com/) — trilha Slowloris
 - **Matheus** — [@handle](https://github.com/) — trilha RUDY
 
-**Orientação:** [Orientador(a)] — Departamento de Ciência da Computação, UnB
+**Orientação:** [Marcos Fagundes Caetano] — Departamento de Ciência da Computação, UnB
 
 ---
 
