@@ -113,8 +113,8 @@ Este repositório contém **código de ataque destinado exclusivamente à experi
 
 ## Autores
 
-- **Gabriel** — [@handle](https://github.com/) — trilha Slowloris
-- **Matheus** — [@handle](https://github.com/) — trilha RUDY
+- **Gabriel** — [@handle](https://github.com/mrkeepout) — trilha Slowloris
+- **Matheus** — [@handle](https://github.com/matw4b) — trilha RUDY
 
 **Orientação:** [Marcos Fagundes Caetano] — Departamento de Ciência da Computação, UnB
 
