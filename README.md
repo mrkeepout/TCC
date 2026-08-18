@@ -60,8 +60,8 @@ Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de hera
 pip3 install profissa_lft
 
 # 2. Este repositório
-git clone https://github.com/<mrkeepout>/<repo>.git
-cd <repo>
+git clone https://github.com/mrkeepout/tcc.git
+cd tcc
 
 # 3. Dependências do LFT, se necessário
 git clone https://github.com/alexandrekaihara/lft
