@@ -1,21 +1,21 @@
-# Ataques EDoS no Lightweight Fog Testbed (LFT)
+# Ataques EDoS no Lightweight SDN Testbed (LST 2.0)
 
 > Trabalho de Conclusão de Curso — Universidade de Brasília (UnB)
-> Implementação e análise de ataques **EDoS** (*Economic Denial of Sustainability*) de baixa taxa em ambiente Fog/Edge, com estudo de **detecção, mitigação e correção**.
+> Implementação e análise de ataques **EDoS** (*Economic Denial of Sustainability*) de baixa taxa em ambientes **SDN / edge**, com estudo de **detecção, mitigação e correção**.
 
 ![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow)
 ![Python](https://img.shields.io/badge/python-3.x-blue)
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange)
-![Base](https://img.shields.io/badge/testbed-LFT%20(profissa__lft)-6f42c1)
+![Base](https://img.shields.io/badge/testbed-LST%202.0-6f42c1)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-green)
 
 ---
 
 ## Sobre o projeto
 
-Ataques de negação de serviço de camada de aplicação e **baixa taxa** (*low-and-slow*) não derrubam o alvo por volume: eles seguram recursos com tráfego que parece legítimo. Em ambientes elásticos e de borda — como os cenários **Fog/Edge** e **O-RAN** —, esse comportamento deixa de causar apenas indisponibilidade e passa a causar **dano econômico e de sustentabilidade**, ao forçar consumo de recursos escassos e caros. Esse é o fenômeno **EDoS**.
+Ataques de negação de serviço de camada de aplicação e **baixa taxa** (*low-and-slow*) não derrubam o alvo por volume: eles seguram recursos com tráfego que parece legítimo. Em ambientes elásticos e de borda — como os cenários **SDN** e **O-RAN** —, esse comportamento deixa de causar apenas indisponibilidade e passa a causar **dano econômico e de sustentabilidade**, ao forçar consumo de recursos escassos e caros. Esse é o fenômeno **EDoS**.
 
-Este trabalho estende o **[Lightweight Fog Testbed (LFT)](https://github.com/UnB-COMNET/lft)** para implementar esses ataques de forma controlada e reprodutível, gerar tráfego rotulado via **CICFlowMeter** e avaliar formas de **detecção, mitigação e correção**. O resultado é documentado em formato de artigo (padrão SBC).
+Este trabalho estende o **[Lightweight SDN Testbed (LST 2.0)](https://sol.sbc.org.br/index.php/sbseg_estendido/article/view/21699)** — testbed emulado baseado em contêineres para redes SDN seguras — para implementar esses ataques de forma controlada e reprodutível, gerar tráfego rotulado via **CICFlowMeter** e avaliar formas de **detecção, mitigação e correção**. O resultado é documentado em formato de artigo (padrão SBC).
 
 ### Ataques nesta fase
 
@@ -24,7 +24,7 @@ Este trabalho estende o **[Lightweight Fog Testbed (LFT)](https://github.com/UnB
 | **Slowloris** | Headers HTTP incompletos, mantendo o pool de conexões ocupado | Gabriel |
 | **RUDY** (*R-U-Dead-Yet?*) | Corpo do POST enviado byte a byte | Matheus |
 
-Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de herança do próprio LFT (`Node → Host`).
+Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de herança adotado no LST 2.0 (`Node → Host`).
 
 ---
 
@@ -48,25 +48,27 @@ Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de hera
 
 ## Requisitos
 
-- **Ubuntu Desktop 24.04 LTS** (recomendado pelo LFT)
-- **Python 3.x** e **Docker**
-- **OpenvSwitch** (emulação dos switches)
+- **Ubuntu Desktop 24.04 LTS**
+- **Python 3.x**, **Docker** e **Docker Compose**
+- **Open vSwitch** (emulação dos switches)
 - **CICFlowMeter** — versão fixada em `docker/` para reprodutibilidade
 
 ## Instalação
 
 ```bash
-# 1. Base do testbed
-pip3 install profissa_lft
-
-# 2. Este repositório
+# 1. Este repositório
 git clone https://github.com/mrkeepout/tcc.git
 cd tcc
 
-# 3. Dependências do LFT, se necessário
-git clone https://github.com/alexandrekaihara/lft
-cd lft && chmod +x dependencies.sh && ./dependencies.sh
+# 2. Base do testbed (LST 2.0) e suas dependências
+#    ⚠️ Confirme a URL oficial do repositório do LST 2.0 antes de rodar.
+git clone <URL-DO-REPOSITORIO-LST-2.0> lst
+cd lst/experiment && sudo chmod +x dependencies.sh && sudo ./dependencies.sh
 ```
+
+> **Nota:** o LST 2.0 é instalado por `git clone` + script `dependencies.sh` (Docker, Docker Compose, Pip3 e Open vSwitch), e disponibiliza imagens Docker pré-construídas para tráfego benigno e malicioso. Não há pacote `pip install` como no LFT (`profissa_lft`).
+
+---
 
 ## Uso
 
@@ -83,7 +85,7 @@ Ao final da execução, os fluxos são exportados como CSV (CICFlowMeter) em `da
 ## Metodologia (visão geral)
 
 ```
-Ataque no LFT  →  captura de pacotes  →  CICFlowMeter  →  CSV de features
+Ataque no LST 2.0  →  captura de pacotes  →  CICFlowMeter  →  CSV de features
       →  dataset rotulado  →  detector  →  detecção / mitigação / correção
 ```
 
@@ -107,7 +109,7 @@ O andamento é acompanhado pelas **[Milestones](../../milestones)** e pelo board
 
 ## Aviso ético e legal
 
-Este repositório contém **código de ataque destinado exclusivamente à experimentação acadêmica controlada** dentro do testbed LFT. O objetivo é o estudo de detecção e defesa. **Não** utilize estas ferramentas contra sistemas, redes ou serviços de terceiros sem autorização — fazê-lo é ilegal e contraria o propósito deste trabalho.
+Este repositório contém **código de ataque destinado exclusivamente à experimentação acadêmica controlada** dentro do testbed LST 2.0. O objetivo é o estudo de detecção e defesa. **Não** utilize estas ferramentas contra sistemas, redes ou serviços de terceiros sem autorização — fazê-lo é ilegal e contraria o propósito deste trabalho.
 
 ---
 
@@ -122,9 +124,9 @@ Este repositório contém **código de ataque destinado exclusivamente à experi
 
 ## Licença
 
-Distribuído sob a licença **AGPL-3.0**, em conformidade com o LFT, que este projeto estende. Veja [`LICENSE`](LICENSE).
+Distribuído sob a licença **AGPL-3.0**, em conformidade com o LST 2.0, que este projeto estende. Veja [`LICENSE`](LICENSE).
 
 ## Agradecimentos
 
-- Equipe do **[LFT / UnB-COMNET](https://github.com/UnB-COMNET/lft)** e do projeto **PROFISSA**
+- Equipe do **LST 2.0 / [UnB-COMNET](https://github.com/UnB-COMNET)**
 - **CIC — Canadian Institute for Cybersecurity**, pelo CICFlowMeter
