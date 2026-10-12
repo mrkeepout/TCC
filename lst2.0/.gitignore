@@ -1,0 +1,9 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# EDoS experiment runtime artifacts
+demonstration/flows/
+demonstration/logs/
+demonstration/loadbalancer/backends.txt
+demonstration/.edos_overrides.py
