@@ -26,7 +26,7 @@ Para o cenário ser EDoS de verdade, o testbed ganhou dois ingredientes que o LS
 | **Slowloris** | Headers HTTP incompletos, mantendo o pool de conexões ocupado | Gabriel |
 | **RUDY** (*R-U-Dead-Yet?*) | Corpo do POST enviado byte a byte | Matheus |
 
-No testbed, os dois são dirigidos pelo **slowhttptest** (modos *Slowloris* / *Slow POST* / *Slow Read*) contra o **VIP** do *load balancer*. Há ainda uma implementação **didática e autônoma** dos mesmos ataques em `infraestrutura/ataques/`, derivando de uma classe base comum, `SlowAttack`, para estudo isolado fora do testbed.
+No testbed, os dois são dirigidos pelo **slowhttptest** (modos *Slowloris* / *Slow POST* / *Slow Read*) contra o **VIP** do *load balancer*. Há ainda uma implementação **didática e autônoma** dos mesmos ataques em `infraestrutura/ataques/`, derivada de uma classe base comum, `SlowAttack`, para estudo isolado fora do testbed.
 
 ---
 
@@ -50,7 +50,7 @@ No testbed, os dois são dirigidos pelo **slowhttptest** (modos *Slowloris* / *S
 └── README.md
 ```
 
-> O testbed LST 2.0 vive embutido em `lst2.0/` (antes era um submódulo; agora é parte do próprio repositório, para que um único `git clone` traga tudo).
+> O testbed LST 2.0 está embutido em `lst2.0/` (antes era um submódulo; agora é parte do próprio repositório, para que um único `git clone` traga tudo).
 
 ---
 
@@ -107,7 +107,7 @@ A assinatura de fluxo do *low-and-slow* (duração alta, `Bytes/s` e `Packets/s`
 
 ---
 
-## Cronograma
+## Cronograma (DESATUALIZADO)
 
 O andamento é acompanhado pelas **[Milestones](../../milestones)** e pelo board em **[Projects](../../projects)**.
 
