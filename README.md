@@ -17,6 +17,8 @@ Ataques de negação de serviço de camada de aplicação e **baixa taxa** (*low
 
 Este trabalho estende o **[Lightweight SDN Testbed (LST 2.0)](https://sol.sbc.org.br/index.php/sbseg_estendido/article/view/21699)** — testbed emulado baseado em contêineres para redes SDN seguras — para implementar esses ataques de forma controlada e reprodutível, gerar tráfego rotulado via **CICFlowMeter** e avaliar formas de **detecção, mitigação e correção**. O resultado é documentado em formato de artigo (padrão SBC).
 
+Para o cenário ser EDoS de verdade, o testbed ganhou dois ingredientes que o LST 2.0 não tinha nativamente: **elasticidade** (um *autoscaler* que provisiona/remove réplicas sob demanda) e **medição de custo** (contabilização de *réplica-segundos* — a "conta" da nuvem). A arquitetura completa está em [`lst2.0/demonstration/README_EDOS.md`](lst2.0/demonstration/README_EDOS.md).
+
 ### Ataques nesta fase
 
 | Ataque | Alvo do abuso | Responsável |
@@ -24,7 +26,7 @@ Este trabalho estende o **[Lightweight SDN Testbed (LST 2.0)](https://sol.sbc.or
 | **Slowloris** | Headers HTTP incompletos, mantendo o pool de conexões ocupado | Gabriel |
 | **RUDY** (*R-U-Dead-Yet?*) | Corpo do POST enviado byte a byte | Matheus |
 
-Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de herança adotado no LST 2.0 (`Node → Host`).
+No testbed, os dois são dirigidos pelo **slowhttptest** (modos *Slowloris* / *Slow POST* / *Slow Read*) contra o **VIP** do *load balancer*. Há ainda uma implementação **didática e autônoma** dos mesmos ataques em `infraestrutura/ataques/`, derivando de uma classe base comum, `SlowAttack`, para estudo isolado fora do testbed.
 
 ---
 
@@ -32,17 +34,23 @@ Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de hera
 
 ```
 .
-├── attacks/            # SlowAttack (base) + Slowloris + RUDY
-├── docker/             # imagens do contêiner-vítima e do atacante
-├── experiment/         # definição e execução dos cenários
-├── detection/          # extração de features e detector baseline
-├── datasets/           # CSVs rotulados gerados pelo CICFlowMeter
-├── results/            # figuras e métricas de avaliação
-├── paper/              # fonte do artigo (LaTeX / referências)
+├── infraestrutura/
+│   └── ataques/            # slow_attacks.py — Slowloris + RUDY didáticos (classe base SlowAttack)
+├── lst2.0/                 # testbed LST 2.0 + topologia EDoS (fork de alexandrekaihara/lst2.0)
+│   ├── demonstration/      # edos.py, edos_gui.py, autoscaler, load balancer, plot_edos.py, README_EDOS.md
+│   ├── docker/             # imagens dos contêineres (web, controlador, CICFlowMeter, etc.)
+│   ├── src/                # núcleo do testbed + dependencies.sh
+│   └── test/
+├── LST 2.0.pdf             # referências (artigo do testbed e literatura de low-rate DoS / EDoS)
+├── Lima-2024.pdf
+├── Chowdhury-2017.pdf
+├── Saeed-2025.pdf
+├── Low-Rate_DoS_Attacks_Detection_Defense_and_Challenges_A_Survey.pdf
+├── LICENSE
 └── README.md
 ```
 
-> Estrutura proposta — ajuste conforme o projeto evoluir.
+> O testbed LST 2.0 vive embutido em `lst2.0/` (antes era um submódulo; agora é parte do próprio repositório, para que um único `git clone` traga tudo).
 
 ---
 
@@ -50,35 +58,41 @@ Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de hera
 
 - **Ubuntu Desktop 24.04 LTS**
 - **Python 3.x**, **Docker** e **Docker Compose**
-- **Open vSwitch** (emulação dos switches)
-- **CICFlowMeter** — versão fixada em `docker/` para reprodutibilidade
+- **Open vSwitch** (emulação dos switches SDN)
+- **CICFlowMeter** — imagem fixada em `lst2.0/docker/` para reprodutibilidade
 
 ## Instalação
 
 ```bash
-# 1. Este repositório
+# 1. Clonar este repositório (o testbed LST 2.0 já vem embutido em lst2.0/)
 git clone https://github.com/mrkeepout/tcc.git
 cd tcc
 
-# 2. Base do testbed (LST 2.0) e suas dependências
-#    ⚠️ Confirme a URL oficial do repositório do LST 2.0 antes de rodar.
-git clone <URL-DO-REPOSITORIO-LST-2.0> lst
-cd lst/experiment && sudo chmod +x dependencies.sh && sudo ./dependencies.sh
+# 2. Instalar as dependências do testbed (Docker, Docker Compose, Pip3, Open vSwitch)
+cd lst2.0/src && sudo chmod +x dependencies.sh && sudo ./dependencies.sh
 ```
-
-> **Nota:** o LST 2.0 é instalado por `git clone` + script `dependencies.sh` (Docker, Docker Compose, Pip3 e Open vSwitch), e disponibiliza imagens Docker pré-construídas para tráfego benigno e malicioso. Não há pacote `pip install` como no LFT (`profissa_lft`).
 
 ---
 
 ## Uso
 
+O experimento EDoS completo (topologia + autoscaler + ataque + medição de custo) é orquestrado a partir do testbed:
+
 ```bash
-# Exemplo: subir a topologia e executar um cenário de ataque
-cd experiment
-python3 run_slowloris.py     # ou run_rudy.py
+cd lst2.0/demonstration
+# Configuração e passos de execução em README_EDOS.md.
+# edos.py sobe a topologia e conduz o experimento; edos_gui.py oferece uma GUI web
+# para configurar e disparar as execuções.
 ```
 
-Ao final da execução, os fluxos são exportados como CSV (CICFlowMeter) em `datasets/`, já rotulados por meio dos *logs* de início/fim de cada ataque.
+Para rodar os ataques slow-rate de forma **didática e isolada**, fora do testbed:
+
+```bash
+python3 infraestrutura/ataques/slow_attacks.py slowloris --host <alvo-no-laboratorio>
+# ou: rudy
+```
+
+Ao final de cada execução no testbed, os fluxos são exportados como CSV (CICFlowMeter), já rotulados por meio dos *logs* de início/fim de cada ataque, e o `plot_edos.py` gera a linha do tempo de réplicas / conexões / custo.
 
 ---
 
@@ -89,7 +103,7 @@ Ataque no LST 2.0  →  captura de pacotes  →  CICFlowMeter  →  CSV de featu
       →  dataset rotulado  →  detector  →  detecção / mitigação / correção
 ```
 
-A assinatura de fluxo do *low-and-slow* (duração alta, `Bytes/s` e `Packets/s` mínimos) é justamente o oposto de um DoS volumétrico — e é o que fundamenta a distinção pelo detector.
+A assinatura de fluxo do *low-and-slow* (duração alta, `Bytes/s` e `Packets/s` mínimos) é justamente o oposto de um DoS volumétrico — e é o que fundamenta a distinção pelo detector. No eixo econômico, o sinal é o *auto-scaling* disparado pelo ataque: réplicas provisionadas e **réplica-segundos** acumulados.
 
 ---
 
@@ -128,5 +142,5 @@ Distribuído sob a licença **AGPL-3.0**, em conformidade com o LST 2.0, que est
 
 ## Agradecimentos
 
-- Equipe do **LST 2.0 / [UnB-COMNET](https://github.com/UnB-COMNET)**
+- Equipe do **LST 2.0 / [UnB-COMNET](https://github.com/UnB-COMNET)** e de [alexandrekaihara/lst2.0](https://github.com/alexandrekaihara/lst2.0)
 - **CIC — Canadian Institute for Cybersecurity**, pelo CICFlowMeter
