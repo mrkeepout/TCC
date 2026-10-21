@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """
-Detector de EDoS por anomalia — treino SÓ com tráfego benigno.
 
 Dois níveis, porque a investigação mostrou que importam coisas diferentes:
 
@@ -10,13 +9,12 @@ Dois níveis, porque a investigação mostrou que importam coisas diferentes:
       cliente (rápido) e servidor (lento) e o ataque "afoga". Resultado:
       AUC ~0.74 — o low-and-slow quase não destoa fluxo-a-fluxo.
 
-  (2) POR-JANELA (agregado). O perigo do low-and-slow é o AGREGADO: muitas
-      conexões lentas ao mesmo tempo (o que o autoscaler mede como conns).
-      Conta requisições "lentas" (Bytes/s < LIMIAR) por janela de tempo e
-      aplica um limiar simples (media + 3*desvio do benigno). Separa limpo.
+O nivel 2 ainda vai ser implementado corretamente.
+  (2) POR-JANELA de analise: muitas conexões lentas ao mesmo tempo 
+      (o que o autoscaler mede como conns).
+      Analisa quantas requisições "lentas" (Bytes/s < LIMIAR) por janela de tempo e
+      aplica um limiar simples (media + 3*desvio do benigno).
 
-Uso:
-    python3 edos_detect.py
 """
 import json
 from pathlib import Path
@@ -134,7 +132,29 @@ def main():
     fig_roc(runs, mu, VI)
 
     (OUT / "results.json").write_text(json.dumps(res, indent=2, ensure_ascii=False))
-    print(json.dumps(res, indent=2, ensure_ascii=False))
+    report(res)
+
+
+def report(res):
+    f, w, wt = res["flow"], res["window"], res["window_threshold"]
+    print("\n=== Nível 1 — detector por fluxo (Mahalanobis D²) ===")
+    print(f"limiar χ² 99%: D² > {res['flow_threshold_chi2_99']:.2f}\n")
+    print(f"{'cenário':<12}{'fluxos':>8}{'AUC':>8}{'precisão':>10}{'recall':>8}{'F1':>8}")
+    for name, lab in (("1atk", "1 atacante"), ("2atk", "2 atacantes")):
+        r = f[name]
+        print(f"{lab:<12}{r['n']:>8}{r['auc']:>8.3f}{r['precision']:>10.1%}"
+              f"{r['recall']:>8.1%}{r['f1']:>8.3f}")
+
+    print("\n=== Nível 2 — detector por janela (requisições lentas / " + WIN + ") ===")
+    print(f"baseline benigno: μ(média) = {wt['mu']:.1f}, σ(desvio padrão) = {wt['sigma']:.1f}  →  "
+          f"limiar μ+3σ = {wt['thr']:.1f}\n")
+    print(f"{'cenário':<12}{'janelas':>8}{'mediana':>9}{'máximo':>8}{'flagradas':>11}")
+    for name, lab in (("1atk", "1 atacante"), ("2atk", "2 atacantes")):
+        r = w[name]
+        print(f"{lab:<12}{r['n_janelas']:>8}{r['n_slow_mediana']:>9.0f}"
+              f"{r['n_slow_max']:>8.0f}{r['janelas_flagradas_%']:>10.1f}%")
+    print(f"{'benigno':<12}{'':>8}{'':>9}{'':>8}{w['benign_fp_%']:>10.1f}%  (falsos positivos)")
+    print(f"\nJSON completo e figuras em {OUT}/")
 
 
 # ------------------------------------------------------------------- figuras
