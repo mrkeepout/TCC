@@ -10,3 +10,6 @@ lst2.0/demonstration/flows/
 lst2.0/demonstration/logs/
 lst2.0/demonstration/loadbalancer/backends.txt
 lst2.0/demonstration/.edos_overrides.py
+
+# Dados de entrada do detector (pesados — gerados pelo testbed)
+detection/data/*.csv
