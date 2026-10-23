@@ -1,21 +1,23 @@
-# Ataques EDoS no Lightweight Fog Testbed (LFT)
+# Ataques EDoS no Lightweight SDN Testbed (LST 2.0)
 
 > Trabalho de Conclusão de Curso — Universidade de Brasília (UnB)
-> Implementação e análise de ataques **EDoS** (*Economic Denial of Sustainability*) de baixa taxa em ambiente Fog/Edge, com estudo de **detecção, mitigação e correção**.
+> Implementação e análise de ataques **EDoS** (*Economic Denial of Sustainability*) de baixa taxa em ambientes **SDN / edge**, com estudo de **detecção, mitigação e correção**.
 
 ![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow)
 ![Python](https://img.shields.io/badge/python-3.x-blue)
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange)
-![Base](https://img.shields.io/badge/testbed-LFT%20(profissa__lft)-6f42c1)
+![Base](https://img.shields.io/badge/testbed-LST%202.0-6f42c1)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-green)
 
 ---
 
 ## Sobre o projeto
 
-Ataques de negação de serviço de camada de aplicação e **baixa taxa** (*low-and-slow*) não derrubam o alvo por volume: eles seguram recursos com tráfego que parece legítimo. Em ambientes elásticos e de borda — como os cenários **Fog/Edge** e **O-RAN** —, esse comportamento deixa de causar apenas indisponibilidade e passa a causar **dano econômico e de sustentabilidade**, ao forçar consumo de recursos escassos e caros. Esse é o fenômeno **EDoS**.
+Ataques de negação de serviço de camada de aplicação e **baixa taxa** (*low-and-slow*) não derrubam o alvo por volume: eles seguram recursos com tráfego que parece legítimo. Em ambientes elásticos e de borda — como os cenários **SDN** e **O-RAN** —, esse comportamento deixa de causar apenas indisponibilidade e passa a causar **dano econômico e de sustentabilidade**, ao forçar consumo de recursos escassos e caros. Esse é o fenômeno **EDoS**.
 
-Este trabalho estende o **[Lightweight Fog Testbed (LFT)](https://github.com/UnB-COMNET/lft)** para implementar esses ataques de forma controlada e reprodutível, gerar tráfego rotulado via **CICFlowMeter** e avaliar formas de **detecção, mitigação e correção**. O resultado é documentado em formato de artigo (padrão SBC).
+Este trabalho estende o **[Lightweight SDN Testbed (LST 2.0)](https://sol.sbc.org.br/index.php/sbseg_estendido/article/view/21699)** — testbed emulado baseado em contêineres para redes SDN seguras — para implementar esses ataques de forma controlada e reprodutível, gerar tráfego rotulado via **CICFlowMeter** e avaliar formas de **detecção, mitigação e correção**. O resultado é documentado em formato de artigo (padrão SBC).
+
+Para o cenário ser EDoS de verdade, o testbed ganhou dois ingredientes que o LST 2.0 não tinha nativamente: **elasticidade** (um *autoscaler* que provisiona/remove réplicas sob demanda) e **medição de custo** (contabilização de *réplica-segundos* — a "conta" da nuvem). A arquitetura completa está em [`lst2.0/demonstration/README_EDOS.md`](lst2.0/demonstration/README_EDOS.md).
 
 ### Ataques nesta fase
 
@@ -24,7 +26,7 @@ Este trabalho estende o **[Lightweight Fog Testbed (LFT)](https://github.com/UnB
 | **Slowloris** | Headers HTTP incompletos, mantendo o pool de conexões ocupado | Gabriel |
 | **RUDY** (*R-U-Dead-Yet?*) | Corpo do POST enviado byte a byte | Matheus |
 
-Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de herança do próprio LFT (`Node → Host`).
+No testbed, os dois são dirigidos pelo **slowhttptest** (modos *Slowloris* / *Slow POST* / *Slow Read*) contra o **VIP** do *load balancer*. Há ainda uma implementação **didática e autônoma** dos mesmos ataques em `infraestrutura/ataques/`, derivada de uma classe base comum, `SlowAttack`, para estudo isolado fora do testbed.
 
 ---
 
@@ -32,66 +34,80 @@ Ambos derivam de uma classe base comum, `SlowAttack`, seguindo o padrão de hera
 
 ```
 .
-├── attacks/            # SlowAttack (base) + Slowloris + RUDY
-├── docker/             # imagens do contêiner-vítima e do atacante
-├── experiment/         # definição e execução dos cenários
-├── detection/          # extração de features e detector baseline
-├── datasets/           # CSVs rotulados gerados pelo CICFlowMeter
-├── results/            # figuras e métricas de avaliação
-├── paper/              # fonte do artigo (LaTeX / referências)
+├── infraestrutura/
+│   └── ataques/            # slow_attacks.py — Slowloris + RUDY didáticos (classe base SlowAttack)
+├── lst2.0/                 # testbed LST 2.0 + topologia EDoS (fork de alexandrekaihara/lst2.0)
+│   ├── demonstration/      # edos.py, edos_gui.py, autoscaler, load balancer, plot_edos.py, README_EDOS.md
+│   ├── docker/             # imagens dos contêineres (web, controlador, CICFlowMeter, etc.)
+│   ├── src/                # núcleo do testbed + dependencies.sh
+│   └── test/
+├── LST 2.0.pdf             # referências (artigo do testbed e literatura de low-rate DoS / EDoS)
+├── Lima-2024.pdf
+├── Chowdhury-2017.pdf
+├── Saeed-2025.pdf
+├── Low-Rate_DoS_Attacks_Detection_Defense_and_Challenges_A_Survey.pdf
+├── LICENSE
 └── README.md
 ```
 
-> Estrutura proposta — ajuste conforme o projeto evoluir.
+> O testbed LST 2.0 está embutido em `lst2.0/` (antes era um submódulo; agora é parte do próprio repositório, para que um único `git clone` traga tudo).
 
 ---
 
 ## Requisitos
 
-- **Ubuntu Desktop 24.04 LTS** (recomendado pelo LFT)
-- **Python 3.x** e **Docker**
-- **OpenvSwitch** (emulação dos switches)
-- **CICFlowMeter** — versão fixada em `docker/` para reprodutibilidade
+- **Ubuntu Desktop 24.04 LTS**
+- **Python 3.x**, **Docker** e **Docker Compose**
+- **Open vSwitch** (emulação dos switches SDN)
+- **CICFlowMeter** — imagem fixada em `lst2.0/docker/` para reprodutibilidade
 
 ## Instalação
 
 ```bash
-# 1. Base do testbed
-pip3 install profissa_lft
-
-# 2. Este repositório
+# 1. Clonar este repositório (o testbed LST 2.0 já vem embutido em lst2.0/)
 git clone https://github.com/mrkeepout/tcc.git
 cd tcc
 
-# 3. Dependências do LFT, se necessário
-git clone https://github.com/alexandrekaihara/lft
-cd lft && chmod +x dependencies.sh && ./dependencies.sh
+# 2. Instalar as dependências do testbed (Docker, Docker Compose, Pip3, Open vSwitch)
+cd lst2.0/src && sudo chmod +x dependencies.sh && sudo ./dependencies.sh
 ```
+
+---
 
 ## Uso
 
+O experimento EDoS completo (topologia + autoscaler + ataque + medição de custo) é orquestrado a partir do testbed:
+
 ```bash
-# Exemplo: subir a topologia e executar um cenário de ataque
-cd experiment
-python3 run_slowloris.py     # ou run_rudy.py
+cd lst2.0/demonstration
+# Configuração e passos de execução em README_EDOS.md.
+# edos.py sobe a topologia e conduz o experimento; edos_gui.py oferece uma GUI web
+# para configurar e disparar as execuções.
 ```
 
-Ao final da execução, os fluxos são exportados como CSV (CICFlowMeter) em `datasets/`, já rotulados por meio dos *logs* de início/fim de cada ataque.
+Para rodar os ataques slow-rate de forma **didática e isolada**, fora do testbed:
+
+```bash
+python3 infraestrutura/ataques/slow_attacks.py slowloris --host <alvo-no-laboratorio>
+# ou: rudy
+```
+
+Ao final de cada execução no testbed, os fluxos são exportados como CSV (CICFlowMeter), já rotulados por meio dos *logs* de início/fim de cada ataque, e o `plot_edos.py` gera a linha do tempo de réplicas / conexões / custo.
 
 ---
 
 ## Metodologia (visão geral)
 
 ```
-Ataque no LFT  →  captura de pacotes  →  CICFlowMeter  →  CSV de features
+Ataque no LST 2.0  →  captura de pacotes  →  CICFlowMeter  →  CSV de features
       →  dataset rotulado  →  detector  →  detecção / mitigação / correção
 ```
 
-A assinatura de fluxo do *low-and-slow* (duração alta, `Bytes/s` e `Packets/s` mínimos) é justamente o oposto de um DoS volumétrico — e é o que fundamenta a distinção pelo detector.
+A assinatura de fluxo do *low-and-slow* (duração alta, `Bytes/s` e `Packets/s` mínimos) é justamente o oposto de um DoS volumétrico — e é o que fundamenta a distinção pelo detector. No eixo econômico, o sinal é o *auto-scaling* disparado pelo ataque: réplicas provisionadas e **réplica-segundos** acumulados.
 
 ---
 
-## Cronograma
+## Cronograma (DESATUALIZADO)
 
 O andamento é acompanhado pelas **[Milestones](../../milestones)** e pelo board em **[Projects](../../projects)**.
 
@@ -107,14 +123,14 @@ O andamento é acompanhado pelas **[Milestones](../../milestones)** e pelo board
 
 ## Aviso ético e legal
 
-Este repositório contém **código de ataque destinado exclusivamente à experimentação acadêmica controlada** dentro do testbed LFT. O objetivo é o estudo de detecção e defesa. **Não** utilize estas ferramentas contra sistemas, redes ou serviços de terceiros sem autorização — fazê-lo é ilegal e contraria o propósito deste trabalho.
+Este repositório contém **código de ataque destinado exclusivamente à experimentação acadêmica controlada** dentro do testbed LST 2.0. O objetivo é o estudo de detecção e defesa. **Não** utilize estas ferramentas contra sistemas, redes ou serviços de terceiros sem autorização — fazê-lo é ilegal e contraria o propósito deste trabalho.
 
 ---
 
 ## Autores
 
-- **Gabriel** — [@handle](https://github.com/) — trilha Slowloris
-- **Matheus** — [@handle](https://github.com/) — trilha RUDY
+- **Gabriel** — [@mrkeepout](https://github.com/mrkeepout) — trilha Slowloris
+- **Matheus** — [@matw4b](https://github.com/matw4b) — trilha RUDY
 
 **Orientação:** [Marcos Fagundes Caetano] — Departamento de Ciência da Computação, UnB
 
@@ -122,9 +138,9 @@ Este repositório contém **código de ataque destinado exclusivamente à experi
 
 ## Licença
 
-Distribuído sob a licença **AGPL-3.0**, em conformidade com o LFT, que este projeto estende. Veja [`LICENSE`](LICENSE).
+Distribuído sob a licença **AGPL-3.0**, em conformidade com o LST 2.0, que este projeto estende. Veja [`LICENSE`](LICENSE).
 
 ## Agradecimentos
 
-- Equipe do **[LFT / UnB-COMNET](https://github.com/UnB-COMNET/lft)** e do projeto **PROFISSA**
+- Equipe do **LST 2.0 / [UnB-COMNET](https://github.com/UnB-COMNET)** e de [alexandrekaihara/lst2.0](https://github.com/alexandrekaihara/lst2.0)
 - **CIC — Canadian Institute for Cybersecurity**, pelo CICFlowMeter

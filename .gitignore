@@ -1,1 +1,15 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# LST 2.0 (herdado)
 lft/
+
+# Artefatos de runtime do experimento EDoS
+lst2.0/demonstration/flows/
+lst2.0/demonstration/logs/
+lst2.0/demonstration/loadbalancer/backends.txt
+lst2.0/demonstration/.edos_overrides.py
+
+# Dados de entrada do detector (pesados — gerados pelo testbed)
+detection/data/*.csv

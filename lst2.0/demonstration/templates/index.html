@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EDoS Lab</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        ink:   { 900: '#0e2439', 800: '#143251', 700: '#1c4066' },
+                        teal:  { 600: '#0e8a7d', 500: '#12a594', 400: '#2bc2b0' },
+                        cloud: { 50: '#f4f7fb', 100: '#eef2f8', 200: '#e2e8f2' },
+                        slate2:{ 400: '#7c8ba1', 500: '#5b6b82', 700: '#33445c' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [v-cloak] { display: none; }
+        body { background: #eef2f8; color: #1e293b; }
+        .card {
+            background: #ffffff;
+            border: 1px solid #e2e8f2;
+            border-radius: 14px;
+            box-shadow: 0 1px 2px rgba(15,36,57,0.04), 0 6px 18px -12px rgba(15,36,57,0.15);
+        }
+        .field {
+            background: #f4f7fb;
+            border: 1px solid #e2e8f2;
+            border-radius: 9px;
+            color: #1e293b;
+            transition: border-color .15s, box-shadow .15s;
+        }
+        .field:focus {
+            outline: none;
+            border-color: #12a594;
+            box-shadow: 0 0 0 3px rgba(18,165,148,0.15);
+        }
+        .field:disabled { opacity: .55; cursor: not-allowed; }
+        .navlink {
+            display: flex; align-items: center; gap: .7rem;
+            padding: .65rem .9rem; border-radius: 10px;
+            color: #b6c6da; font-weight: 500; cursor: pointer;
+            transition: background .15s, color .15s;
+        }
+        .navlink:hover { background: rgba(255,255,255,0.06); color: #fff; }
+        .navlink.active { background: #12a594; color: #fff; }
+        .terminal {
+            font-family: 'SFMono-Regular', ui-monospace, 'Courier New', monospace;
+            white-space: pre-wrap; word-break: break-word;
+            scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
+        }
+        .terminal::-webkit-scrollbar { width: 8px; }
+        .terminal::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body>
+<div id="app" v-cloak class="flex min-h-screen">
+
+    <!-- ================= SIDEBAR ================= -->
+    <aside class="w-60 shrink-0 bg-ink-900 text-white flex flex-col fixed h-screen">
+        <div class="px-6 py-6 flex items-center gap-3 border-b border-white/10">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center text-lg font-bold">E</div>
+            <div>
+                <div class="font-bold leading-tight">EDoS Lab</div>
+                <div class="text-[11px] text-slate2-400">LST 2.0</div>
+            </div>
+        </div>
+        <nav class="p-4 space-y-1 flex-1">
+            <div :class="['navlink', view==='experiment' && 'active']" @click="view='experiment'">
+                <span>🧪</span><span>Experimento</span>
+            </div>
+            <div :class="['navlink', view==='results' && 'active']" @click="goResults">
+                <span>📊</span><span>Resultados</span>
+            </div>
+            <div :class="['navlink', view==='history' && 'active']" @click="goHistory">
+                <span>🗂️</span><span>Histórico</span>
+            </div>
+        </nav>
+        <div class="p-4 text-[11px] text-slate2-400 border-t border-white/10">
+            Economic Denial of Sustainability<br>Painel de experimentos
+        </div>
+    </aside>
+
+    <!-- ================= MAIN ================= -->
+    <div class="flex-1 ml-60 flex flex-col min-h-screen">
+
+        <!-- Top bar -->
+        <header class="sticky top-0 z-10 bg-cloud-50/90 backdrop-blur border-b border-cloud-200 px-8 py-3 flex items-center justify-between">
+            <div>
+                <h1 class="text-lg font-bold text-ink-900">{{ viewTitle }}</h1>
+                <p class="text-xs text-slate2-500">{{ viewSubtitle }}</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold border"
+                      :class="isRunning ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate2-500 border-cloud-200'">
+                    <span class="relative flex h-2.5 w-2.5">
+                        <span v-if="isRunning" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2.5 w-2.5" :class="isRunning ? 'bg-emerald-500' : 'bg-slate-400'"></span>
+                    </span>
+                    {{ isRunning ? 'Rodando' : 'Ocioso' }}
+                </span>
+                <button v-if="!isRunning" @click="startExperiment"
+                        class="bg-teal-500 hover:bg-teal-600 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm transition">
+                    ▶ Iniciar
+                </button>
+                <button v-else @click="stopExperiment"
+                        class="bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm transition">
+                    ■ Parar
+                </button>
+            </div>
+        </header>
+
+        <main class="p-8 flex-1">
+
+            <!-- ============ EXPERIMENT VIEW ============ -->
+            <div v-show="view==='experiment'" class="space-y-6 max-w-6xl">
+                <div v-if="isRunning" class="card p-4 flex items-center gap-3 !bg-emerald-50 !border-emerald-200">
+                    <span class="text-emerald-600">●</span>
+                    <span class="text-sm text-emerald-800">Experimento em curso. Os parâmetros ficam bloqueados até a parada.</span>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Topologia -->
+                    <section class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">🖧 Topologia</h2>
+                        <div class="space-y-3">
+                            <div class="row"><label>Clientes legítimos</label><input type="number" min="1" max="9" v-model.number="config.NUM_CLIENTS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <div class="row"><label>Atacantes</label><input type="number" min="1" max="9" v-model.number="config.NUM_ATTACKERS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <div class="row"><label>Réplicas mínimas</label><input type="number" min="1" v-model.number="config.MIN_REPLICAS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <div class="row"><label>Réplicas máximas</label><input type="number" min="1" v-model.number="config.MAX_REPLICAS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                        </div>
+                    </section>
+
+                    <!-- Autoscaler -->
+                    <section class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">⚙️ Autoscaler</h2>
+                        <div class="space-y-3">
+                            <div class="row"><label>Scale-up (conns/rep)</label><input type="number" min="1" v-model.number="config.SCALE_UP_CONN" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <div class="row"><label>Scale-down (conns/rep)</label><input type="number" min="1" v-model.number="config.SCALE_DOWN_CONN" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <div class="row"><label>Tick de amostragem (s)</label><input type="number" min="1" v-model.number="config.TICK_SECONDS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <div class="row"><label>Cooldown (s)</label><input type="number" min="1" v-model.number="config.COOLDOWN_SECONDS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <div class="row"><label>Custo (réplica-s)</label><input type="number" step="0.0001" v-model.number="config.COST_PER_REPLICA_SEC" :disabled="isRunning" class="field px-3 py-1.5 w-28 text-right"></div>
+                        </div>
+                    </section>
+
+                    <!-- Carga -->
+                    <section class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">📈 Perfil de carga</h2>
+                        <div class="space-y-3">
+                            <div class="row"><label>Modo</label>
+                                <select v-model="config.ATTACK_MODE" :disabled="isRunning" class="field px-3 py-1.5 w-36">
+                                    <option value="yoyo">Yo-Yo (pulsado)</option>
+                                    <option value="sustained">Sustentado</option>
+                                </select>
+                            </div>
+                            <div class="row"><label>Gerador</label>
+                                <select v-model="config.SLOW_TEST" :disabled="isRunning" class="field px-3 py-1.5 w-36">
+                                    <option value="slowloris">Slowloris</option>
+                                    <option value="slowpost">Slow POST</option>
+                                    <option value="slowread">Slow Read</option>
+                                </select>
+                            </div>
+                            <div class="row"><label>Conexões / origem</label><input type="number" min="1" v-model.number="config.SLOW_CONNS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <div class="row"><label>Pulso ativo (s)</label><input type="number" v-model.number="config.PULSE_ON" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <div class="row"><label>Pulso ocioso (s)</label><input type="number" v-model.number="config.PULSE_OFF" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                        </div>
+                    </section>
+
+                    <!-- Duração -->
+                    <section class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">⏱️ Duração</h2>
+                        <div class="space-y-3">
+                            <div class="row"><label>Duração automática (s)</label><input type="number" min="0" v-model.number="config.EXPERIMENT_DURATION" :disabled="isUnlimited || isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <label class="flex items-center gap-2 text-sm text-slate2-700">
+                                <input type="checkbox" v-model="isUnlimited" :disabled="isRunning" class="accent-teal-500 w-4 h-4">
+                                Sem limite (parar manualmente)
+                            </label>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Log ao vivo -->
+                <section class="card overflow-hidden">
+                    <div class="flex items-center justify-between px-4 py-2.5 bg-ink-900 text-slate2-400">
+                        <span class="font-mono text-xs">edos.py — saída ao vivo</span>
+                        <button @click="logs=[]" class="text-xs hover:text-white">Limpar</button>
+                    </div>
+                    <div ref="logBox" class="terminal p-4 h-72 overflow-y-auto text-[13px] bg-[#0d1b2a] text-slate-200">
+                        <div v-for="(l,i) in logs" :key="i" v-text="l"></div>
+                        <div v-if="!logs.length" class="text-slate-500 italic">Os logs do experimento aparecerão aqui…</div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============ RESULTS VIEW ============ -->
+            <div v-show="view==='results'" class="space-y-6 max-w-6xl">
+                <div v-if="!current" class="card p-10 text-center text-slate2-500">
+                    Nenhum resultado carregado. Rode um experimento ou abra uma rodada no Histórico.
+                </div>
+                <template v-else>
+                    <!-- Headline numbers: what the attack cost, and how -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="card p-5 md:col-span-1 border-l-4" style="border-left-color:#e34948">
+                            <div class="text-xs text-slate2-500">Custo extra causado pelo ataque</div>
+                            <div class="text-5xl font-bold text-ink-900 mt-1">+{{ current.summary.extra_pct.toFixed(0) }}%</div>
+                            <div class="text-xs text-slate2-500 mt-2">{{ fmtCost(current.summary.final_cost) }} com ataque vs {{ fmtCost(current.summary.baseline_cost) }} sem ataque</div>
+                        </div>
+                        <div class="card p-5">
+                            <div class="text-xs text-slate2-500">Custo extra pago depois que o ataque parou</div>
+                            <div class="text-3xl font-bold text-ink-900 mt-1">{{ current.summary.extra_after_attack_pct.toFixed(0) }}%</div>
+                            <div class="text-xs text-slate2-500 mt-2">instâncias ainda ativas fora dos períodos de ataque</div>
+                        </div>
+                        <div class="card p-5">
+                            <div class="text-xs text-slate2-500">Escalonamentos forçados</div>
+                            <div class="text-3xl font-bold text-ink-900 mt-1">▲{{ current.summary.scale_ups }} <span class="text-slate2-400">·</span> ▼{{ current.summary.scale_downs }}</div>
+                            <div class="text-xs text-slate2-500 mt-2">pico de {{ current.summary.peak_replicas }} de {{ current.config.MAX_REPLICAS }} instâncias possíveis</div>
+                        </div>
+                        <div class="card p-5">
+                            <div class="text-xs text-slate2-500">Tempo sob ataque</div>
+                            <div class="text-3xl font-bold text-ink-900 mt-1">{{ current.summary.attack_seconds.toFixed(0) }}s <span class="text-base font-medium text-slate2-500">de {{ current.summary.duration.toFixed(0) }}s</span></div>
+                            <div class="text-xs text-slate2-500 mt-2">{{ attackDesc }}</div>
+                        </div>
+                    </div>
+
+                    <!-- One figure, shared time axis: attack -> autoscaler reaction -> bill -->
+                    <section class="card p-6">
+                        <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate2-700 mb-2">
+                            <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-3 rounded-sm" style="background:rgba(227,73,72,0.14)"></span>Período sob ataque</span>
+                            <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5" style="background:#2a78d6"></span>Conexões</span>
+                            <span class="flex items-center gap-1.5"><span class="inline-block w-4 border-t-2 border-dashed" style="border-color:#7c8ba1"></span>Limiar de scale-up</span>
+                            <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5" style="background:#eb6834"></span>Instâncias (▲ scale-up · ▼ scale-down)</span>
+                            <span class="flex items-center gap-1.5"><span class="inline-block w-4 h-0.5" style="background:#1baf7a"></span>Custo com ataque</span>
+                            <span class="flex items-center gap-1.5"><span class="inline-block w-4 border-t-2 border-dashed" style="border-color:#7c8ba1"></span>Custo sem ataque</span>
+                        </div>
+                        <div ref="chartTimeline" class="w-full" style="height:760px"></div>
+                        <p v-if="current.config.source !== 'run'" class="text-[11px] text-slate2-500 mt-2">
+                            Rodada anterior ao registro de configuração: limiares e instâncias mínimas vêm do <code>edos_config.py</code> atual.
+                        </p>
+                        <p class="text-[11px] text-slate2-500 mt-1">
+                            Período sob ataque inferido pela carga: mais de {{ current.config.SCALE_DOWN_CONN }} conexões simultâneas no balanceador.
+                            Custo sem ataque = {{ current.config.MIN_REPLICAS }} instância(s) mínima(s) durante toda a rodada.
+                        </p>
+                    </section>
+
+                    <details class="card p-4 text-sm">
+                        <summary class="cursor-pointer font-medium text-ink-900">Ver dados da rodada (tabela)</summary>
+                        <div class="max-h-80 overflow-y-auto mt-3">
+                            <table class="w-full text-xs" style="font-variant-numeric: tabular-nums">
+                                <thead class="text-slate2-500 text-left sticky top-0 bg-white">
+                                    <tr><th class="py-1.5 pr-3">Tempo (s)</th><th class="pr-3">Sob ataque</th><th class="pr-3 text-right">Conexões</th><th class="pr-3 text-right">Instâncias</th><th class="pr-3 text-right">Custo</th><th class="text-right">Custo sem ataque</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(t,i) in current.time" :key="i" class="border-t border-cloud-200">
+                                        <td class="py-1 pr-3">{{ t.toFixed(0) }}</td>
+                                        <td class="pr-3">{{ underAttack(t) ? 'sim' : '—' }}</td>
+                                        <td class="pr-3 text-right">{{ current.conns[i] }}</td>
+                                        <td class="pr-3 text-right">{{ current.replicas[i] }}</td>
+                                        <td class="pr-3 text-right">{{ fmtCost(current.costs[i]) }}</td>
+                                        <td class="text-right">{{ fmtCost(current.baseline[i]) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </template>
+            </div>
+
+            <!-- ============ HISTORY VIEW ============ -->
+            <div v-show="view==='history'" class="space-y-6 max-w-6xl">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm text-slate2-500">Rodadas salvas automaticamente antes de cada novo experimento.</p>
+                    <button @click="loadHistory" class="text-sm text-teal-600 font-semibold hover:underline">↻ Atualizar</button>
+                </div>
+
+                <div v-if="!history.length" class="card p-10 text-center text-slate2-500">Nenhuma rodada anterior encontrada.</div>
+
+                <div v-else class="card overflow-hidden">
+                    <table class="w-full text-sm">
+                        <thead class="bg-cloud-50 text-slate2-500 text-left">
+                            <tr>
+                                <th class="px-4 py-3 font-medium w-10"></th>
+                                <th class="px-4 py-3 font-medium">Data</th>
+                                <th class="px-4 py-3 font-medium">Ataque</th>
+                                <th class="px-4 py-3 font-medium text-right">Custo extra</th>
+                                <th class="px-4 py-3 font-medium text-right">Custo final</th>
+                                <th class="px-4 py-3 font-medium text-right">Pico réplicas</th>
+                                <th class="px-4 py-3 font-medium text-right">Réplica-s</th>
+                                <th class="px-4 py-3 font-medium text-right">Duração</th>
+                                <th class="px-4 py-3 font-medium text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="r in history" :key="r.file" class="border-t border-cloud-200 hover:bg-cloud-50">
+                                <td class="px-4 py-3"><input type="checkbox" :value="r.file" v-model="compareSel" class="accent-teal-500 w-4 h-4"></td>
+                                <td class="px-4 py-3 font-medium text-ink-900">{{ r.label }}</td>
+                                <td class="px-4 py-3">{{ r.summary ? modeLabel(r.summary.attack_mode) : '—' }}</td>
+                                <td class="px-4 py-3 text-right font-semibold">{{ r.summary ? '+' + r.summary.extra_pct.toFixed(0) + '%' : '—' }}</td>
+                                <td class="px-4 py-3 text-right">{{ r.summary ? r.summary.final_cost.toFixed(4) : '—' }}</td>
+                                <td class="px-4 py-3 text-right">{{ r.summary ? r.summary.peak_replicas : '—' }}</td>
+                                <td class="px-4 py-3 text-right">{{ r.summary ? r.summary.replica_seconds.toFixed(1) : '—' }}</td>
+                                <td class="px-4 py-3 text-right">{{ r.summary ? r.summary.duration.toFixed(0)+'s' : '—' }}</td>
+                                <td class="px-4 py-3 text-right"><button @click="openRun(r.file)" class="text-teal-600 font-semibold hover:underline">Abrir</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div v-if="compareSel.length >= 2" class="card p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="font-semibold text-ink-900">Comparação — custo acumulado ({{ compareSel.length }} rodadas)</h2>
+                        <button @click="compareSel=[]" class="text-xs text-slate2-500 hover:underline">Limpar seleção</button>
+                    </div>
+                    <div ref="chartCompare" class="w-full" style="height:320px"></div>
+                </div>
+                <p v-else-if="compareSel.length===1" class="text-xs text-slate2-500">Marque ao menos 2 rodadas para comparar.</p>
+            </div>
+
+        </main>
+    </div>
+</div>
+
+<style>
+    .row { display: flex; align-items: center; justify-content: space-between; }
+    .row > label { font-size: .85rem; color: #33445c; }
+</style>
+
+<script>
+    const { createApp, ref, reactive, computed, onMounted, nextTick, watch } = Vue;
+    // Shared light-theme layout for the stacked single-metric charts.
+    const AXIS = { gridcolor: '#eef2f8', zerolinecolor: '#e2e8f2', rangemode: 'tozero' };
+    // Height is set explicitly (not only via CSS): the Tailwind CDN generates a class's CSS
+    // only after it shows up in the DOM, so at plot time the div may still be 0px tall and
+    // Plotly would fall back to its 450px default, overflowing the card.
+    const CHART_H = 260;
+    const baseLayout = (title, color, height = CHART_H) => ({
+        height, autosize: true,
+        title: { text: title, font: { size: 14, color: '#0e2439' }, x: 0, xanchor: 'left' },
+        paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+        font: { color: '#5b6b82', family: 'Inter' },
+        margin: { l: 55, r: 20, t: 34, b: 36 },
+        xaxis: { ...AXIS, title: 'Tempo (s)' },
+        yaxis: { ...AXIS, tickfont: { color }, titlefont: { color } },
+        showlegend: false
+    });
+
+    createApp({
+        setup() {
+            const view = ref('experiment');
+            const status = ref('idle');
+            const logs = ref([]);
+            const logBox = ref(null);
+            const config = reactive({
+                NUM_CLIENTS: 2, NUM_ATTACKERS: 2, MIN_REPLICAS: 1, MAX_REPLICAS: 3,
+                SCALE_UP_CONN: 50, SCALE_DOWN_CONN: 10, TICK_SECONDS: 5,
+                COOLDOWN_SECONDS: 10, COST_PER_REPLICA_SEC: 0.0001,
+                ATTACK_MODE: 'yoyo', SLOW_TEST: 'slowloris',
+                SLOW_CONNS: 200, SLOW_RATE: 50, SLOW_INTERVAL: 10,
+                PULSE_ON: 20, PULSE_OFF: 20, EXPERIMENT_DURATION: 0
+            });
+            const isUnlimited = ref(false);
+            const current = ref(null);
+            const history = ref([]);
+            const compareSel = ref([]);
+            const chartTimeline = ref(null), chartCompare = ref(null);
+            let eventSource = null;
+
+            const isRunning = computed(() => status.value === 'running');
+            const titles = {
+                experiment: ['Experimento', 'Configure a topologia, o autoscaler e a carga'],
+                results:    ['Resultados', 'Linha do tempo econômica da última rodada'],
+                history:    ['Histórico', 'Rodadas anteriores e comparação']
+            };
+            const viewTitle = computed(() => titles[view.value][0]);
+            const viewSubtitle = computed(() => titles[view.value][1]);
+
+            watch(isUnlimited, v => {
+                if (v) config.EXPERIMENT_DURATION = 0;
+                else if (config.EXPERIMENT_DURATION === 0) config.EXPERIMENT_DURATION = 60;
+            });
+            watch(() => config.EXPERIMENT_DURATION, v => { if (v > 0) isUnlimited.value = false; });
+
+            const toast = (text, type = 'info') => {
+                const bg = { info: '#143251', error: '#b91c1c', success: '#0e8a7d' }[type] || '#143251';
+                Toastify({ text, duration: 3000, gravity: 'bottom', position: 'right',
+                    style: { background: bg, borderRadius: '9px' } }).showToast();
+            };
+
+            const loadDefaults = async () => {
+                try {
+                    const data = await (await fetch('/api/defaults')).json();
+                    Object.assign(config, data);
+                    if (config.EXPERIMENT_DURATION === 0) isUnlimited.value = true;
+                } catch (e) { console.error(e); }
+            };
+
+            const validate = () => {
+                if (config.MIN_REPLICAS > config.MAX_REPLICAS) return toast('Réplicas mínimas não podem exceder as máximas', 'error'), false;
+                if (config.SCALE_DOWN_CONN >= config.SCALE_UP_CONN) return toast('Scale-down deve ser menor que scale-up', 'error'), false;
+                if (config.NUM_ATTACKERS > 9 || config.NUM_CLIENTS > 9) return toast('Máximo de 9 clientes e 9 atacantes', 'error'), false;
+                return true;
+            };
+
+            const startExperiment = async () => {
+                if (isRunning.value || !validate()) return;
+                logs.value = []; current.value = null; view.value = 'experiment';
+                try {
+                    const res = await fetch('/api/start', { method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
+                    if (res.ok) { status.value = 'running'; toast('Experimento iniciado', 'success'); startLogStream(); }
+                    else toast((await res.json()).error || 'Erro ao iniciar', 'error');
+                } catch (e) { toast('Falha de conexão com o backend', 'error'); }
+            };
+
+            const stopExperiment = async () => {
+                try {
+                    const res = await fetch('/api/stop', { method: 'POST' });
+                    if (res.ok) toast('Parando experimento…');
+                } catch (e) { toast('Erro ao solicitar parada', 'error'); }
+            };
+
+            const scrollLog = () => { const b = logBox.value; if (b) b.scrollTop = b.scrollHeight; };
+
+            const startLogStream = () => {
+                if (eventSource) eventSource.close();
+                eventSource = new EventSource('/api/logs');
+                eventSource.onmessage = e => {
+                    const d = JSON.parse(e.data);
+                    if (d.line) { logs.value.push(d.line); nextTick(scrollLog); }
+                };
+                eventSource.addEventListener('done', async () => {
+                    eventSource.close(); status.value = 'idle';
+                    toast('Experimento concluído', 'success');
+                    await openRun(null);
+                });
+                eventSource.onerror = () => setTimeout(checkStatus, 2000);
+            };
+
+            const checkStatus = async () => {
+                try {
+                    const d = await (await fetch('/api/status')).json();
+                    if (d.status === 'running' && status.value !== 'running') { status.value = 'running'; startLogStream(); }
+                } catch (e) {}
+            };
+
+            // Load one run's series and jump to Results.
+            const openRun = async (file) => {
+                try {
+                    const url = file ? `/api/results?file=${encodeURIComponent(file)}` : '/api/results';
+                    const res = await fetch(url);
+                    if (!res.ok) { if (file) toast('Falha ao abrir rodada', 'error'); return; }
+                    current.value = await res.json();
+                    view.value = 'results';
+                    nextTick(renderCharts);
+                } catch (e) { console.error(e); }
+            };
+
+            const fmtCost = v => (v ?? 0).toFixed(4);
+            const modeLabel = m => ({ yoyo: 'Yo-yo (pulsado)', sustained: 'Sustentado' }[m] || m || '—');
+            const attackDesc = computed(() => {
+                const c = current.value && current.value.config; if (!c) return '';
+                const n = current.value.summary.pulses;
+                const pulses = `${n} pulso${n === 1 ? '' : 's'} detectado${n === 1 ? '' : 's'}`;
+                return c.ATTACK_MODE === 'yoyo'
+                    ? `${modeLabel(c.ATTACK_MODE)} · ${c.PULSE_ON}s on / ${c.PULSE_OFF}s off · ${pulses}`
+                    : `${modeLabel(c.ATTACK_MODE)} · ${pulses}`;
+            });
+            const underAttack = t => (current.value?.attack_windows || []).some(([a, b]) => t >= a && t <= b);
+
+            // Stacked panels on ONE shared x-axis: hover shows the same instant in all three.
+            const renderCharts = () => {
+                const d = current.value; if (!d || !chartTimeline.value) return;
+                const s = d.summary, c = d.config;
+                const C = { conns: '#2a78d6', reps: '#eb6834', cost: '#1baf7a', ref: '#7c8ba1',
+                            attack: 'rgba(227,73,72,0.08)', ink: '#0e2439', muted: '#5b6b82', grid: '#eef2f8' };
+                const P = { conns: [0.72, 0.95], reps: [0.39, 0.62], cost: [0, 0.29] };   // y domains
+                const tEnd = d.time[d.time.length - 1];
+
+                // Unified hover lists traces last-to-first, so this is the tooltip order reversed
+                const traces = [
+                    { x: d.time, y: d.baseline, yaxis: 'y3', name: 'Custo sem ataque', mode: 'lines',
+                      line: { color: C.ref, width: 1.5, dash: 'dash' },
+                      hovertemplate: 'Custo sem ataque: %{y:.4f}<extra></extra>' },
+                    // tonexty fills the gap to the baseline: the money the attack burned
+                    { x: d.time, y: d.costs, yaxis: 'y3', name: 'Custo com ataque', mode: 'lines',
+                      line: { color: C.cost, width: 2 }, fill: 'tonexty', fillcolor: 'rgba(27,175,122,0.12)',
+                      hovertemplate: 'Custo com ataque: %{y:.4f}<extra></extra>' },
+                    ...['down', 'up'].map(dir => {
+                        const ev = d.events.filter(e => e.dir === dir);
+                        return { x: ev.map(e => e.t), y: ev.map(e => e.to), yaxis: 'y2', mode: 'markers',
+                            name: dir === 'up' ? 'Scale-up' : 'Scale-down',
+                            marker: { symbol: dir === 'up' ? 'triangle-up' : 'triangle-down', size: 11,
+                                      color: C.reps, line: { color: '#ffffff', width: 2 } },
+                            customdata: ev.map(e => `${e.from}→${e.to}`),
+                            hovertemplate: (dir === 'up' ? '▲ Scale-up ' : '▼ Scale-down ') + '%{customdata}<extra></extra>' };
+                    }),
+                    { x: d.time, y: d.replicas, yaxis: 'y2', name: 'Instâncias', mode: 'lines',
+                      line: { color: C.reps, width: 2, shape: 'hv' },
+                      hovertemplate: 'Instâncias: %{y}<extra></extra>' },
+                    { x: d.time, y: d.scale_up_line, yaxis: 'y', name: 'Limiar de scale-up', mode: 'lines',
+                      line: { color: C.ref, width: 1.5, dash: 'dash', shape: 'hv' },
+                      hovertemplate: 'Limiar de scale-up: %{y}<extra></extra>' },
+                    { x: d.time, y: d.conns, yaxis: 'y', name: 'Conexões', mode: 'lines',
+                      line: { color: C.conns, width: 2 }, fill: 'tozeroy', fillcolor: 'rgba(42,120,214,0.10)',
+                      hovertemplate: 'Conexões: %{y}<extra></extra>' },
+                ];
+
+                const panelTitle = (dom, main, sub) => ({
+                    xref: 'paper', yref: 'paper', x: 0, y: dom[1] + 0.012, xanchor: 'left', yanchor: 'bottom',
+                    showarrow: false, align: 'left',
+                    text: `<b>${main}</b>  <span style="color:${C.muted}">${sub}</span>`,
+                    font: { size: 13, color: C.ink }
+                });
+                const n = s.pulses, ups = s.scale_ups, downs = s.scale_downs;
+                const annotations = [
+                    panelTitle(P.conns, '1 · O ataque', `${n} pulso${n === 1 ? '' : 's'} de conexões lentas no balanceador`),
+                    panelTitle(P.reps, '2 · A reação do autoscaler', `${ups} scale-up${ups === 1 ? '' : 's'} e ${downs} scale-down${downs === 1 ? '' : 's'} forçados`),
+                    panelTitle(P.cost, '3 · A conta', `+${s.extra_pct.toFixed(0)}% em relação ao cenário sem ataque`),
+                    // Direct end labels on the two cost lines
+                    { x: tEnd, y: d.costs[d.costs.length - 1], xref: 'x', yref: 'y3', xanchor: 'left', yanchor: 'middle',
+                      xshift: 6, showarrow: false, text: `Com ataque<br><b>${fmtCost(s.final_cost)}</b>`,
+                      font: { size: 11, color: C.ink }, align: 'left' },
+                    { x: tEnd, y: s.baseline_cost, xref: 'x', yref: 'y3', xanchor: 'left', yanchor: 'middle',
+                      xshift: 6, showarrow: false, text: `Sem ataque<br><b>${fmtCost(s.baseline_cost)}</b>`,
+                      font: { size: 11, color: C.muted }, align: 'left' },
+                    { x: tEnd, y: c.MAX_REPLICAS, xref: 'x', yref: 'y2', xanchor: 'left', yanchor: 'middle',
+                      xshift: 6, showarrow: false, text: 'máx.', font: { size: 11, color: C.muted } },
+                ];
+                // Label only the first attack band; the legend covers the rest
+                if (d.attack_windows.length) {
+                    const [a, b] = d.attack_windows[0];
+                    // Top of the instances panel: clear of the connection peaks and the panel titles
+                    annotations.push({ x: (a + b) / 2, y: P.reps[1], xref: 'x', yref: 'paper', yanchor: 'top',
+                        showarrow: false, text: 'sob ataque', font: { size: 11, color: '#b3261e' } });
+                }
+
+                const shapes = [
+                    ...d.attack_windows.map(([a, b]) => ({ type: 'rect', xref: 'x', yref: 'paper',
+                        x0: a, x1: b, y0: 0, y1: P.conns[1], fillcolor: C.attack, line: { width: 0 }, layer: 'below' })),
+                    { type: 'line', xref: 'paper', yref: 'y2', x0: 0, x1: 1, y0: c.MAX_REPLICAS, y1: c.MAX_REPLICAS,
+                      line: { color: C.ref, width: 1, dash: 'dot' }, layer: 'below' },
+                ];
+
+                const yBase = { gridcolor: C.grid, zeroline: false, rangemode: 'tozero', fixedrange: true,
+                                tickfont: { size: 11 }, title: { font: { size: 11, color: C.muted } } };
+                Plotly.newPlot(chartTimeline.value, traces, {
+                    height: 760, autosize: true,
+                    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+                    font: { color: C.muted, family: 'Inter' },
+                    margin: { l: 64, r: 96, t: 16, b: 48 },
+                    showlegend: false,
+                    hovermode: 'x unified', hoversubplots: 'axis',
+                    hoverlabel: { bgcolor: '#ffffff', bordercolor: '#e2e8f2', font: { color: C.ink, size: 12 } },
+                    xaxis: { anchor: 'y3', title: { text: 'Tempo desde o início', font: { size: 12 } }, ticksuffix: ' s',
+                             gridcolor: C.grid, zeroline: false, range: [0, tEnd], fixedrange: true,
+                             showspikes: true, spikemode: 'across', spikesnap: 'cursor',
+                             spikecolor: '#94a3b8', spikethickness: 1, spikedash: 'solid' },
+                    yaxis:  { ...yBase, domain: P.conns, title: { ...yBase.title, text: 'Conexões' } },
+                    yaxis2: { ...yBase, domain: P.reps, title: { ...yBase.title, text: 'Instâncias' },
+                              dtick: 1, range: [0, c.MAX_REPLICAS + 0.6] },
+                    yaxis3: { ...yBase, domain: P.cost, title: { ...yBase.title, text: 'Custo acumulado' },
+                              tickformat: '.3f' },
+                    annotations, shapes
+                }, { responsive: true, displayModeBar: false });
+            };
+
+            const loadHistory = async () => {
+                try { history.value = (await (await fetch('/api/history')).json()).runs || []; }
+                catch (e) { console.error(e); }
+            };
+
+            const goResults = () => { view.value = 'results'; if (current.value) nextTick(renderCharts); };
+            const goHistory = () => { view.value = 'history'; loadHistory(); };
+
+            const palette = ['#12a594', '#f43f5e', '#6366f1', '#f59e0b', '#0ea5e9', '#a855f7'];
+            const renderCompare = async () => {
+                if (compareSel.value.length < 2) return;
+                const traces = [];
+                for (let i = 0; i < compareSel.value.length; i++) {
+                    const file = compareSel.value[i];
+                    const res = await fetch(`/api/results?file=${encodeURIComponent(file)}`);
+                    if (!res.ok) continue;
+                    const d = await res.json();
+                    const label = (history.value.find(r => r.file === file) || {}).label || file;
+                    traces.push({ x: d.time, y: d.costs, name: label, mode: 'lines',
+                        line: { color: palette[i % palette.length], width: 2.5 } });
+                }
+                Plotly.newPlot(chartCompare.value, traces, {
+                    ...baseLayout('', '#12a594', 320), showlegend: true,
+                    legend: { orientation: 'h', y: -0.2 },
+                    yaxis: { ...AXIS, title: 'Custo acumulado' }
+                }, { responsive: true, displayModeBar: false });
+            };
+            watch(compareSel, () => nextTick(renderCompare), { deep: true });
+
+            onMounted(() => { loadDefaults(); checkStatus(); });
+
+            return {
+                view, viewTitle, viewSubtitle, status, isRunning, logs, logBox, config, isUnlimited,
+                current, history, compareSel,
+                chartTimeline, chartCompare, fmtCost, modeLabel, attackDesc, underAttack,
+                startExperiment, stopExperiment, goResults, goHistory, loadHistory, openRun
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
