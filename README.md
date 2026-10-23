@@ -50,7 +50,6 @@ No testbed, os dois são dirigidos pelo **slowhttptest** (modos *Slowloris* / *S
 └── README.md
 ```
 
-> O testbed LST 2.0 está embutido em `lst2.0/` (antes era um submódulo; agora é parte do próprio repositório, para que um único `git clone` traga tudo).
 
 ---
 
