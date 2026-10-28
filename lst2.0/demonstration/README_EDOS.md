@@ -75,6 +75,7 @@ Selecionáveis em `edos_config.py` via `ATTACK_MODE`:
 | [`edos_config.py`](edos_config.py) | Todos os parâmetros (IPs, limiares de scaling, modo/força de ataque, billing) |
 | [`edos_autoscaler.py`](edos_autoscaler.py) | Autoscaler elástico com ciclo de vida realista (warmup → active → draining), quantum mínimo de cobrança e custo LCU (compute + ALB + banda) |
 | [`edos_labeling.py`](edos_labeling.py) | Dedup da captura (borda cliente↔LB) + rotulagem bidirecional por faixa de IP |
+| [`edos_metrics.py`](edos_metrics.py) | Pós-processamento: métricas derivadas NCO / EAF / W_yoyo + agregados de QoS |
 | [`loadbalancer/lb.py`](loadbalancer/lb.py) | Proxy TCP round-robin com backends recarregados dinamicamente |
 | [`edos_attack/edos_attacker.py`](edos_attack/edos_attacker.py) | Wrapper do slowhttptest (modos `sustained`/`yoyo`) |
 | [`client_profiles.py`](client_profiles.py) | Framework de clientes benignos configuráveis (perfis `browsing`/`mailing`/`printing` no motor SURGE) |
@@ -100,6 +101,13 @@ sudo python3 edos.py
 Na primeira vez, a instanciação demora mais porque as imagens são baixadas do Docker
 Hub. Para encerrar, pressione **CTRL+C uma vez** — o experimento derruba todos os
 containers, gera o relatório de fluxos e imprime o resumo de custo.
+
+Após o run, para o gráfico da linha do tempo e as métricas derivadas:
+
+```bash
+python3 plot_edos.py       # flows/edos_plot.png (réplicas, conexões, custo)
+python3 edos_metrics.py    # flows/edos_metrics.json (NCO / EAF / W_yoyo + QoS)
+```
 
 ## Parâmetros principais (`edos_config.py`)
 
@@ -147,6 +155,15 @@ SLOW_CONNS≈200, SCALE_UP_CONN≈50/réplica`. Ajuste os limiares à capacidade
 - **`flows/run_manifest.json`** — manifesto do run (git SHA, timestamp, semente,
   duração, frota expandida e a configuração efetiva), para o dataset ser
   regenerável e permitir o split Train/Test por run.
+- **`flows/qos_l*.csv`** — QoS por requisição de cada cliente benigno (latência,
+  status HTTP e sucesso/erro), copiado para fora do container **antes** do
+  teardown. É a dimensão de disponibilidade: o dano colateral do ataque sobre o
+  usuário legítimo.
+- **`flows/edos_metrics.json`** — métricas derivadas (rode `python3 edos_metrics.py`
+  após o experimento): **NCO** (overhead de custo normalizado sobre o baseline),
+  **EAF** (fator de amplificação econômica = dano por byte do atacante) e
+  **W_yoyo** (fração de réplica-segundos desperdiçada nas fases `PULSE_OFF`), além
+  de taxa de sucesso e percentis de latência do QoS (inclusive por fase ON/OFF).
 
 ## Como verificar que está funcionando
 

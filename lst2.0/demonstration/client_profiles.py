@@ -60,6 +60,7 @@ class ClientConfig:
     client_id: int = 1      # distinguishes fleet members sharing a seed
     duration: float = 0.0   # seconds; 0 = run until killed
     connect_timeout: float = 5.0
+    qos_csv: str = ''       # per-request QoS log (latency/status); '' disables
 
 
 @dataclass
@@ -94,6 +95,20 @@ class ClientProfile(ABC):
         self._ok = 0
         self._fail = 0
         self._last_err = ''
+        # QoS: one row per request (latency + status), flushed immediately so the
+        # data survives even though the container is killed at teardown. The
+        # orchestrator copies this file out before deleting the client. This is
+        # the availability/QoS dimension -- the collateral damage the attack does
+        # to the legitimate user, alongside the economic one.
+        self._qos = None
+        if config.qos_csv:
+            try:
+                self._qos = open(config.qos_csv, 'w', buffering=1)
+                self._qos.write(
+                    'timestamp,profile,client_id,method,path,body_size,'
+                    'latency_ms,status,ok\n')
+            except OSError:
+                self._qos = None
 
     # ----- The TWO points each profile fills (what varies) -------------------
     @abstractmethod
@@ -133,6 +148,11 @@ class ClientProfile(ABC):
         finally:
             self._close()
             self._report(force=True)
+            if self._qos is not None:
+                try:
+                    self._qos.close()
+                except OSError:
+                    pass
 
     def _deadline_reached(self, start: float) -> bool:
         return self._config.duration > 0 and (time.time() - start) >= self._config.duration
@@ -161,6 +181,9 @@ class ClientProfile(ABC):
         """Issue one request over the Keep-Alive connection. A failure (a
         saturated backend under attack) is counted, not swallowed, and the
         connection is reset so the next request reconnects."""
+        t0 = time.time()
+        status = ''
+        ok = 0
         try:
             conn = self._connection()
             body = b'x' * req.body_size if req.body_size > 0 else None
@@ -170,11 +193,26 @@ class ClientProfile(ABC):
             conn.request(req.method, req.path, body=body, headers=headers)
             resp = conn.getresponse()
             resp.read()  # drain so the connection can be reused
+            status = str(resp.status)
+            ok = 1
             self._ok += 1
         except Exception as ex:
             self._fail += 1
             self._last_err = f"{type(ex).__name__}: {ex}"
+            status = type(ex).__name__
             self._close()  # force a fresh connection next time
+        self._qos_record(req, (time.time() - t0) * 1000.0, status, ok)
+
+    def _qos_record(self, req: Request, latency_ms: float, status: str, ok: int) -> None:
+        if self._qos is None:
+            return
+        try:
+            self._qos.write(
+                f"{time.time():.3f},{self.name},{self._config.client_id},"
+                f"{req.method},{req.path},{req.body_size},"
+                f"{latency_ms:.1f},{status},{ok}\n")
+        except (OSError, ValueError):
+            pass
 
     def _close(self) -> None:
         if self._conn is not None:
@@ -306,9 +344,11 @@ def _parse_args(argv: List[str]) -> ClientConfig:
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--client-id', type=int, default=1)
     p.add_argument('--duration', type=float, default=0.0)
+    p.add_argument('--qos-csv', default='')
     a = p.parse_args(argv)
     cfg = ClientConfig(target_vip=a.target, target_port=a.port, seed=a.seed,
-                       client_id=a.client_id, duration=a.duration)
+                       client_id=a.client_id, duration=a.duration,
+                       qos_csv=a.qos_csv)
     return a.profile, cfg
 
 

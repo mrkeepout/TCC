@@ -121,7 +121,8 @@ def createClients() -> None:
             f"bash -c 'python3 /home/client_profiles.py "
             f"--profile {profile} --target {cfg.TARGET_VIP} "
             f"--port {cfg.TARGET_PORT} --seed {seed} --client-id {i} "
-            f"--duration {duration} > /home/client.log 2>&1 &'")
+            f"--duration {duration} --qos-csv /home/client_qos.csv "
+            f"> /home/client.log 2>&1 &'")
 
 
 def createAttackers() -> None:
@@ -208,7 +209,22 @@ def writeManifest() -> None:
 
 
 # --- Teardown / reporting -------------------------------------------------
+def collectClientQoS():
+    # Pull each benign client's per-request QoS log OUT of its container before
+    # the container is destroyed -- otherwise the data (latency/success of the
+    # legitimate user, i.e. the attack's collateral damage) dies with it.
+    for name, node in nodes.items():
+        if not name.startswith('l'):
+            continue
+        try:
+            node.copyContainerToLocal('/home/client_qos.csv',
+                                      f'flows/qos_{name}.csv')
+        except Exception:
+            pass  # a client that never wrote a QoS file just has nothing to copy
+
+
 def unmakeChanges():
+    collectClientQoS()
     printTerm("[LST2.0][EDoS] Deleting containers")
     if autoscaler is not None:
         autoscaler.delete_replicas()
