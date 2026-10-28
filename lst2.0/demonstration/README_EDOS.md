@@ -119,7 +119,7 @@ python3 edos_metrics.py    # flows/edos_metrics.json (NCO / EAF / W_yoyo + QoS)
 | `COOLDOWN_SECONDS` | Tempo mínimo entre duas ações de scaling |
 | `WARMUP_SECONDS` | Tempo que uma réplica nova fica **cobrada mas fora do pool** (janela que o yo-yo explora) |
 | `DRAIN_TIMEOUT_SECONDS` | Janela de *connection draining* no scale-down antes de remover a réplica |
-| `PRICING` | Perfil de preços plugável (AWS): custo de VM, LCU da ALB (conexões ativas/novas), banda e **quantum mínimo de cobrança** |
+| `PRICING_PROFILES` / `PRICING_CLOUD` / `PRICING` | Perfis de custo por nuvem (**AWS / Azure / GCP**) + nuvem ativa. Na GUI, um dropdown carrega o padrão da nuvem escolhida e ainda permite editar cada valor. Cada número é citado em `sources`. GCP não tem unidade por conexão (LCU=0; custo de LB via dados/banda); Azure cobra VM por segundo sem mínimo de 60s |
 | `COST_PER_REPLICA_SEC` | *(legado)* constante antiga mantida só para referência; o custo real vem de `PRICING` |
 | `ATTACK_MODE` | `sustained` ou `yoyo` |
 | `SLOW_TEST` | `slowloris` / `slowpost` / `slowread` |

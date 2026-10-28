@@ -109,24 +109,81 @@ DRAIN_TIMEOUT_SECONDS = 30
 # where R_billed counts every ALIVE replica (warming + active + draining) and a
 # replica that lives less than billing_quantum_sec is still charged the full
 # quantum -- which is what makes a yo-yo (rapid up/down) economically distinct
-# from a sustained attack. Every number cites its source so the model is
-# defensible and can be swapped for GCP/Azure.
-PRICING = {
-    'cloud': 'AWS us-east-1 (reference)',
-    'p_vm_per_sec': 0.0416 / 3600,   # EC2 t3.medium on-demand, $0.0416/h
-    'p_lcu_per_sec': 0.008 / 3600,   # ALB, $0.008 per LCU-hour
-    'lcu_active_conn_dim': 3000.0,   # ALB LCU: 3000 active connections = 1 LCU
-    'lcu_new_conn_dim': 25.0,        # ALB LCU: 25 new connections/s   = 1 LCU
-    'p_bw_per_gb': 0.09,             # data transfer out, ~$0.09/GB
-    'billing_quantum_sec': 60.0,     # EC2 per-second billing has a 60s minimum
-    'sources': {
-        'p_vm_per_sec': 'AWS EC2 t3.medium on-demand us-east-1 ($0.0416/h)',
-        'p_lcu_per_sec': 'AWS ALB pricing ($0.008 per LCU-hour)',
-        'lcu_dims': 'AWS ALB LCU dimensions: 25 new conn/s, 3000 active conn, 1 GB/h',
-        'p_bw_per_gb': 'AWS EC2 data transfer out (~$0.09/GB)',
-        'billing_quantum_sec': 'AWS EC2 per-second billing, 60s minimum charge',
+# from a sustained attack.
+#
+# Three cloud profiles are provided (AWS / Azure / GCP), each number cited. The
+# GUI lets you pick one (loads its defaults) and still edit any value. The active
+# profile is PRICING; PRICING_CLOUD names which one it came from.
+#
+# Modelling notes (what maps cleanly and what doesn't, per cloud):
+#  * The connection-based LB unit (p_lcu + conn dims) models AWS ALB "LCU" and
+#    Azure Application Gateway v2 "Capacity Unit" directly. GCP Cloud Load
+#    Balancing has NO connection-based unit (it bills forwarding rules + data
+#    processed), so for GCP p_lcu_per_sec = 0 and the LB cost rides on p_bw_per_gb.
+#  * The fixed hourly LB charge (ALB ~$0.0225/h, App Gateway ~$0.246/h, GCP fwd
+#    rule ~$0.025/h) is a constant paid with or without attack, so it cancels out
+#    of the EDoS overhead (NCO/EAF) and is intentionally omitted.
+#  * billing_quantum_sec is the compute minimum-billing increment: AWS EC2 and
+#    GCE bill per-second with a 60s minimum; Azure VMs bill per-second with no
+#    such minimum (quantum ~1s), which notably softens the yo-yo compute penalty.
+PRICING_PROFILES = {
+    'aws': {
+        'cloud': 'AWS us-east-1',
+        'p_vm_per_sec': 0.0416 / 3600,   # EC2 t3.medium on-demand, $0.0416/h
+        'p_lcu_per_sec': 0.008 / 3600,   # ALB, $0.008 per LCU-hour
+        'lcu_active_conn_dim': 3000.0,   # ALB LCU: 3000 active connections = 1 LCU
+        'lcu_new_conn_dim': 25.0,        # ALB LCU: 25 new connections/s   = 1 LCU
+        'p_bw_per_gb': 0.09,             # EC2 data transfer out, ~$0.09/GB
+        'billing_quantum_sec': 60.0,     # EC2 per-second billing, 60s minimum
+        'sources': {
+            'p_vm_per_sec': 'AWS EC2 t3.medium on-demand us-east-1 ($0.0416/h)',
+            'p_lcu_per_sec': 'AWS ALB pricing ($0.008 per LCU-hour)',
+            'lcu_dims': 'AWS ALB LCU: 25 new conn/s, 3000 active conn, 1 GB/h',
+            'p_bw_per_gb': 'AWS EC2 data transfer out (~$0.09/GB)',
+            'billing_quantum_sec': 'AWS EC2 per-second billing, 60s minimum',
+        },
+    },
+    'azure': {
+        'cloud': 'Azure East US',
+        'p_vm_per_sec': 0.0416 / 3600,   # VM B2s (2 vCPU/4GB) Linux, $0.0416/h
+        'p_lcu_per_sec': 0.008 / 3600,   # App Gateway Standard_V2, $0.008/CU-hour
+        'lcu_active_conn_dim': 2500.0,   # App Gateway CU: 2500 persistent connections
+        'lcu_new_conn_dim': 50.0,        # Standard_V2: 50 new conn/s per compute unit
+        'p_bw_per_gb': 0.087,            # Azure egress, ~$0.087/GB
+        'billing_quantum_sec': 1.0,      # Azure VM per-second billing, no 60s minimum
+        'sources': {
+            'p_vm_per_sec': 'Azure VM Standard_B2s Linux East US (~$0.0416/h)',
+            'p_lcu_per_sec': 'Azure Application Gateway Standard_V2 ($0.008/CU-hour)',
+            'lcu_dims': 'App Gateway v2 CU: 2500 persistent conn, 50 new conn/s, 2.22 Mbps',
+            'p_bw_per_gb': 'Azure bandwidth egress (~$0.087/GB)',
+            'billing_quantum_sec': 'Azure VM per-second billing (no 60s minimum)',
+            'note': 'Fixed gateway charge (~$0.246/h) omitted as an attack-independent constant',
+        },
+    },
+    'gcp': {
+        'cloud': 'GCP us-central1',
+        'p_vm_per_sec': 0.0335 / 3600,   # e2-medium on-demand, ~$0.0335/h
+        'p_lcu_per_sec': 0.0,            # GCP LB has NO connection-based unit
+        'lcu_active_conn_dim': 3000.0,   # inert while p_lcu_per_sec = 0 (placeholder)
+        'lcu_new_conn_dim': 25.0,        # inert while p_lcu_per_sec = 0 (placeholder)
+        'p_bw_per_gb': 0.12,             # GCP internet egress (~$0.12/GB)
+        'billing_quantum_sec': 60.0,     # GCE per-second billing, 1-minute minimum
+        'sources': {
+            'p_vm_per_sec': 'GCP Compute Engine e2-medium us-central1 (~$0.0335/h)',
+            'p_lcu_per_sec': 'GCP Cloud LB has no connection unit -> 0 (bills data processed)',
+            'lcu_dims': 'N/A for GCP (LB priced by forwarding rules + data processed $0.008/GiB)',
+            'p_bw_per_gb': 'GCP internet egress (~$0.12/GB)',
+            'billing_quantum_sec': 'GCE per-second billing, 1-minute minimum',
+            'note': 'Forwarding-rule charge (~$0.025/h) omitted as an attack-independent constant',
+        },
     },
 }
+
+# Active profile (the GUI can switch this and edit any value).
+PRICING_CLOUD = 'aws'
+import copy as _copy
+PRICING = _copy.deepcopy(PRICING_PROFILES[PRICING_CLOUD])
+del _copy
 
 # --- Attack model (slowhttptest driven) ---
 # ATTACK_MODE: "sustained" keeps the service pinned at MAX; "yoyo" pulses the

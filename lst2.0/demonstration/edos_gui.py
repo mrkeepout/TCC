@@ -18,9 +18,11 @@ app = Flask(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 EDOS_SCRIPT = BASE_DIR / 'edos.py'
 PLOT_SCRIPT = BASE_DIR / 'plot_edos.py'
+METRICS_SCRIPT = BASE_DIR / 'edos_metrics.py'
 OVERRIDE_FILE = BASE_DIR / '.edos_overrides.py'
 COST_CSV = BASE_DIR / 'flows' / 'edos_cost.csv'
 COST_PLOT = BASE_DIR / 'flows' / 'edos_plot.png'
+METRICS_JSON = BASE_DIR / 'flows' / 'edos_metrics.json'
 # Config the run was started with; travels with the CSV into the history backup
 RUN_CONFIG = COST_CSV.with_suffix('.json')
 
@@ -43,14 +45,12 @@ def run_experiment(config_data):
     """Gera o arquivo de override, executa o experimento e gera os gráficos ao final."""
     global experiment_process, experiment_active
     
-    # 1. Gerar o arquivo de override com os valores da GUI
+    # 1. Gerar o arquivo de override com os valores da GUI. repr() cobre str,
+    # número, bool, lista (FLEET) e dict (PRICING) como Python válido.
     override_content = ""
     for key, value in config_data.items():
-        if isinstance(value, str):
-            override_content += f"{key} = '{value}'\n"
-        else:
-            override_content += f"{key} = {value}\n"
-            
+        override_content += f"{key} = {repr(value)}\n"
+
     with open(OVERRIDE_FILE, 'w') as f:
         f.write(override_content)
         
@@ -68,6 +68,9 @@ def run_experiment(config_data):
         COST_PLOT.rename(backup_plot)
     if RUN_CONFIG.exists():
         RUN_CONFIG.rename(BASE_DIR / 'flows' / f'edos_cost_{timestamp_str}.json')
+    # Back up the previous run's derived metrics so it stays paired with its CSV.
+    if METRICS_JSON.exists():
+        METRICS_JSON.rename(BASE_DIR / 'flows' / f'edos_metrics_{timestamp_str}.json')
     try:
         with open(RUN_CONFIG, 'w') as f:
             json.dump(config_data, f)
@@ -108,11 +111,16 @@ def run_experiment(config_data):
         if OVERRIDE_FILE.exists():
             OVERRIDE_FILE.unlink()
         
-        # 3. Gerar os gráficos se o CSV foi criado
+        # 3. Gerar os gráficos e as métricas derivadas se o CSV foi criado
         if COST_CSV.exists():
             log_queue.put(">>> [GUI] Gerando gráficos com plot_edos.py...\n")
             subprocess.run(["python3", str(PLOT_SCRIPT)], cwd=str(BASE_DIR), capture_output=True)
-            log_queue.put(">>> [GUI] Gráficos gerados. Resultados prontos para visualização.\n")
+            log_queue.put(">>> [GUI] Calculando métricas derivadas (NCO / EAF / W_yoyo / QoS)...\n")
+            m = subprocess.run(["python3", str(METRICS_SCRIPT)], cwd=str(BASE_DIR),
+                               capture_output=True, text=True)
+            for line in (m.stdout or '').splitlines():
+                log_queue.put(line + "\n")
+            log_queue.put(">>> [GUI] Resultados prontos para visualização.\n")
         
         with experiment_lock:
             experiment_process = None
@@ -136,7 +144,10 @@ def get_defaults():
     importlib.reload(edos_config)
     
     defaults = {
-        'NUM_CLIENTS': getattr(edos_config, 'NUM_CLIENTS', 2),
+        # Benign fleet is now declarative (how many + which profile).
+        'FLEET': getattr(edos_config, 'FLEET',
+                         [{'profile': 'browsing', 'count': 2}]),
+        'SEED': getattr(edos_config, 'SEED', 1337),
         'NUM_ATTACKERS': getattr(edos_config, 'NUM_ATTACKERS', 2),
         'MIN_REPLICAS': getattr(edos_config, 'MIN_REPLICAS', 1),
         'MAX_REPLICAS': getattr(edos_config, 'MAX_REPLICAS', 3),
@@ -144,7 +155,12 @@ def get_defaults():
         'SCALE_DOWN_CONN': getattr(edos_config, 'SCALE_DOWN_CONN', 10),
         'TICK_SECONDS': getattr(edos_config, 'TICK_SECONDS', 5),
         'COOLDOWN_SECONDS': getattr(edos_config, 'COOLDOWN_SECONDS', 10),
-        'COST_PER_REPLICA_SEC': getattr(edos_config, 'COST_PER_REPLICA_SEC', 0.0001),
+        # Phase 2 realism.
+        'WARMUP_SECONDS': getattr(edos_config, 'WARMUP_SECONDS', 30),
+        'DRAIN_TIMEOUT_SECONDS': getattr(edos_config, 'DRAIN_TIMEOUT_SECONDS', 30),
+        'PRICING': getattr(edos_config, 'PRICING', {}),
+        'PRICING_CLOUD': getattr(edos_config, 'PRICING_CLOUD', 'aws'),
+        'PRICING_PROFILES': getattr(edos_config, 'PRICING_PROFILES', {}),
         'ATTACK_MODE': getattr(edos_config, 'ATTACK_MODE', 'yoyo'),
         'SLOW_TEST': getattr(edos_config, 'SLOW_TEST', 'slowloris'),
         'SLOW_CONNS': getattr(edos_config, 'SLOW_CONNS', 200),
@@ -381,6 +397,24 @@ def _read_cost_csv(path):
             'config': cfg, 'summary': summary}
 
 
+def _load_metrics(csv_path):
+    """Find the derived-metrics JSON paired with a cost CSV (current run or a
+    timestamped backup) and return it, or None if absent."""
+    if csv_path == COST_CSV:
+        mpath = METRICS_JSON
+    else:
+        # edos_cost_<ts>.csv -> edos_metrics_<ts>.json
+        name = csv_path.name.replace('edos_cost_', 'edos_metrics_')
+        mpath = csv_path.with_name(name).with_suffix('.json')
+    if mpath.exists():
+        try:
+            with open(mpath) as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+    return None
+
+
 @app.route('/api/results', methods=['GET'])
 def get_results():
     """Return one run's series. ?file=<backup name> selects a past run."""
@@ -391,7 +425,9 @@ def get_results():
     if not path.exists():
         return jsonify({'error': 'Resultados não encontrados.'}), 404
     try:
-        return jsonify(_read_cost_csv(path))
+        payload = _read_cost_csv(path)
+        payload['metrics'] = _load_metrics(path)
+        return jsonify(payload)
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:

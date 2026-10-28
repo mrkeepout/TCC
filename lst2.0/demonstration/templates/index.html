@@ -135,23 +135,42 @@
                     <!-- Topologia -->
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">🖧 Topologia</h2>
-                        <div class="space-y-3">
-                            <div class="row"><label>Clientes legítimos</label><input type="number" min="1" max="9" v-model.number="config.NUM_CLIENTS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Atacantes</label><input type="number" min="1" max="9" v-model.number="config.NUM_ATTACKERS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Réplicas mínimas</label><input type="number" min="1" v-model.number="config.MIN_REPLICAS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Réplicas máximas</label><input type="number" min="1" v-model.number="config.MAX_REPLICAS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                        <div class="space-y-4">
+                            <num-field label="Atacantes" v-model="config.NUM_ATTACKERS" :min="1" :max="9" :disabled="isRunning"></num-field>
+                            <num-field label="Réplicas mínimas" v-model="config.MIN_REPLICAS" :min="1" :max="9" :disabled="isRunning"></num-field>
+                            <num-field label="Réplicas máximas" v-model="config.MAX_REPLICAS" :min="1" :max="9" :disabled="isRunning"></num-field>
+                            <num-field label="Semente (seed)" v-model="config.SEED" :min="0" :disabled="isRunning" width="w-28"></num-field>
+                        </div>
+                    </section>
+
+                    <!-- Frota benigna -->
+                    <section class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">
+                            👥 Frota benigna <span class="text-xs font-normal text-slate2-500 ml-auto">{{ fleetTotal }}/9 clientes</span>
+                        </h2>
+                        <div class="space-y-2">
+                            <div v-for="(row,i) in config.FLEET" :key="i" class="flex items-center gap-2">
+                                <select v-model="row.profile" :disabled="isRunning" class="field px-3 py-1.5 flex-1">
+                                    <option v-for="p in PROFILES" :value="p">{{ p }}</option>
+                                </select>
+                                <input type="number" min="1" max="9" v-model.number="row.count" :disabled="isRunning" class="field px-3 py-1.5 w-20 text-right">
+                                <button @click="removeFleetRow(i)" :disabled="isRunning || config.FLEET.length<=1" class="text-slate2-400 hover:text-red-500 px-2 disabled:opacity-30" title="Remover">✕</button>
+                            </div>
+                            <button @click="addFleetRow" :disabled="isRunning" class="text-sm text-teal-600 hover:text-teal-500 mt-1 disabled:opacity-40">+ Adicionar perfil</button>
+                            <p class="text-[11px] text-slate2-500 pt-1">Perfis HTTP (motor SURGE): <b>browsing</b> navegação, <b>mailing</b> rajadas + anexo, <b>printing</b> uploads grandes esporádicos.</p>
                         </div>
                     </section>
 
                     <!-- Autoscaler -->
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">⚙️ Autoscaler</h2>
-                        <div class="space-y-3">
-                            <div class="row"><label>Scale-up (conns/rep)</label><input type="number" min="1" v-model.number="config.SCALE_UP_CONN" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Scale-down (conns/rep)</label><input type="number" min="1" v-model.number="config.SCALE_DOWN_CONN" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Tick de amostragem (s)</label><input type="number" min="1" v-model.number="config.TICK_SECONDS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Cooldown (s)</label><input type="number" min="1" v-model.number="config.COOLDOWN_SECONDS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Custo (réplica-s)</label><input type="number" step="0.0001" v-model.number="config.COST_PER_REPLICA_SEC" :disabled="isRunning" class="field px-3 py-1.5 w-28 text-right"></div>
+                        <div class="space-y-4">
+                            <num-field label="Scale-up (conns/rep)" v-model="config.SCALE_UP_CONN" :min="1" :max="300" :disabled="isRunning"></num-field>
+                            <num-field label="Scale-down (conns/rep)" v-model="config.SCALE_DOWN_CONN" :min="1" :max="100" :disabled="isRunning"></num-field>
+                            <num-field label="Tick de amostragem (s)" v-model="config.TICK_SECONDS" :min="1" :max="60" :disabled="isRunning"></num-field>
+                            <num-field label="Cooldown (s)" v-model="config.COOLDOWN_SECONDS" :min="1" :max="120" :disabled="isRunning"></num-field>
+                            <num-field label="Warmup da réplica (s)" v-model="config.WARMUP_SECONDS" :min="0" :max="120" :step="5" :disabled="isRunning"></num-field>
+                            <num-field label="Draining no scale-down (s)" v-model="config.DRAIN_TIMEOUT_SECONDS" :min="0" :max="120" :step="5" :disabled="isRunning"></num-field>
                         </div>
                     </section>
 
@@ -172,21 +191,42 @@
                                     <option value="slowread">Slow Read</option>
                                 </select>
                             </div>
-                            <div class="row"><label>Conexões / origem</label><input type="number" min="1" v-model.number="config.SLOW_CONNS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Pulso ativo (s)</label><input type="number" v-model.number="config.PULSE_ON" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Pulso ocioso (s)</label><input type="number" v-model.number="config.PULSE_OFF" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <num-field label="Conexões / origem" v-model="config.SLOW_CONNS" :min="1" :max="1000" :step="10" :disabled="isRunning"></num-field>
+                            <num-field label="Pulso ativo (s)" v-model="config.PULSE_ON" :min="1" :max="120" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning"></num-field>
+                            <num-field label="Pulso ocioso (s)" v-model="config.PULSE_OFF" :min="1" :max="120" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning"></num-field>
                         </div>
                     </section>
 
                     <!-- Duração -->
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">⏱️ Duração</h2>
-                        <div class="space-y-3">
-                            <div class="row"><label>Duração automática (s)</label><input type="number" min="0" v-model.number="config.EXPERIMENT_DURATION" :disabled="isUnlimited || isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                        <div class="space-y-4">
+                            <num-field label="Duração automática (s)" v-model="config.EXPERIMENT_DURATION" :min="0" :max="600" :step="10" :disabled="isUnlimited || isRunning"></num-field>
                             <label class="flex items-center gap-2 text-sm text-slate2-700">
                                 <input type="checkbox" v-model="isUnlimited" :disabled="isRunning" class="accent-teal-500 w-4 h-4">
                                 Sem limite (parar manualmente)
                             </label>
+                        </div>
+                    </section>
+
+                    <!-- Modelo de custo (LCU) -->
+                    <section class="card p-6" v-if="config.PRICING">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">
+                            💲 Modelo de custo <span class="text-xs font-normal text-slate2-500 ml-auto">{{ config.PRICING.cloud || 'perfil de preços' }}</span>
+                        </h2>
+                        <div class="space-y-4">
+                            <div class="row"><label>Nuvem (carrega o padrão)</label>
+                                <select v-model="selectedCloud" @change="applyCloud(selectedCloud)" :disabled="isRunning" class="field px-3 py-1.5 w-44">
+                                    <option v-for="k in cloudKeys" :value="k">{{ CLOUD_LABELS[k] || k }}</option>
+                                </select>
+                            </div>
+                            <p class="text-[11px] text-slate2-500 -mt-1">Troque a nuvem para carregar os preços padrão; os campos abaixo continuam editáveis.</p>
+                            <num-field label="Compute / VM ($/s)" v-model="config.PRICING.p_vm_per_sec" :min="0" :step="0.0000001" :disabled="isRunning" width="w-32"></num-field>
+                            <num-field label="LCU da ALB ($/s)" v-model="config.PRICING.p_lcu_per_sec" :min="0" :step="0.0000001" :disabled="isRunning" width="w-32"></num-field>
+                            <num-field label="LCU: conexões ativas" v-model="config.PRICING.lcu_active_conn_dim" :min="100" :max="5000" :step="100" :disabled="isRunning"></num-field>
+                            <num-field label="LCU: novas conexões/s" v-model="config.PRICING.lcu_new_conn_dim" :min="1" :max="100" :disabled="isRunning"></num-field>
+                            <num-field label="Banda ($/GB)" v-model="config.PRICING.p_bw_per_gb" :min="0" :max="1" :step="0.01" :disabled="isRunning" width="w-28"></num-field>
+                            <num-field label="Quantum mínimo (s)" v-model="config.PRICING.billing_quantum_sec" :min="0" :max="300" :step="10" :disabled="isRunning"></num-field>
                         </div>
                     </section>
                 </div>
@@ -233,6 +273,29 @@
                             <div class="text-xs text-slate2-500 mt-2">{{ attackDesc }}</div>
                         </div>
                     </div>
+
+                    <!-- Derived metrics (NCO / EAF / W_yoyo + QoS) -->
+                    <section v-if="current.metrics" class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">📐 Métricas derivadas</h2>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div><div class="text-xs text-slate2-500">NCO — overhead de custo</div>
+                                <div class="text-2xl font-bold text-ink-900">{{ current.metrics.NCO != null ? '+' + (current.metrics.NCO*100).toFixed(0) + '%' : '—' }}</div>
+                                <div class="text-[11px] text-slate2-500">sobre o baseline mínimo</div></div>
+                            <div><div class="text-xs text-slate2-500">EAF — dano por MB</div>
+                                <div class="text-2xl font-bold text-ink-900">{{ current.metrics.EAF_cost_per_MB != null ? current.metrics.EAF_cost_per_MB.toFixed(4) : '—' }}</div>
+                                <div class="text-[11px] text-slate2-500">custo extra / byte do atacante</div></div>
+                            <div><div class="text-xs text-slate2-500">W_yoyo — desperdício</div>
+                                <div class="text-2xl font-bold text-ink-900">{{ current.metrics.W_yoyo != null ? (current.metrics.W_yoyo*100).toFixed(0) + '%' : '—' }}</div>
+                                <div class="text-[11px] text-slate2-500">réplica-s em fases OFF</div></div>
+                            <div><div class="text-xs text-slate2-500">QoS — sucesso benigno</div>
+                                <div class="text-2xl font-bold text-ink-900">{{ current.metrics.qos && current.metrics.qos.success_rate != null ? (current.metrics.qos.success_rate*100).toFixed(1) + '%' : '—' }}</div>
+                                <div class="text-[11px] text-slate2-500" v-if="current.metrics.qos">{{ current.metrics.qos.requests }} reqs · p95 {{ current.metrics.qos.latency_ms && current.metrics.qos.latency_ms.p95 != null ? current.metrics.qos.latency_ms.p95.toFixed(0)+'ms' : '—' }}</div></div>
+                        </div>
+                        <p v-if="current.metrics.qos && current.metrics.qos.success_rate_attack_on != null" class="text-[11px] text-slate2-500 mt-3">
+                            Sucesso sob pulso de ataque: <b>{{ (current.metrics.qos.success_rate_attack_on*100).toFixed(0) }}%</b> (ON)
+                            vs <b>{{ (current.metrics.qos.success_rate_attack_off*100).toFixed(0) }}%</b> (OFF) — o dano colateral ao usuário legítimo.
+                        </p>
+                    </section>
 
                     <!-- One figure, shared time axis: attack -> autoscaler reaction -> bill -->
                     <section class="card p-6">
@@ -355,20 +418,41 @@
         showlegend: false
     });
 
-    createApp({
+    const app = createApp({
         setup() {
             const view = ref('experiment');
             const status = ref('idle');
             const logs = ref([]);
             const logBox = ref(null);
             const config = reactive({
-                NUM_CLIENTS: 2, NUM_ATTACKERS: 2, MIN_REPLICAS: 1, MAX_REPLICAS: 3,
+                FLEET: [{ profile: 'browsing', count: 2 }], SEED: 1337,
+                NUM_ATTACKERS: 2, MIN_REPLICAS: 1, MAX_REPLICAS: 3,
                 SCALE_UP_CONN: 50, SCALE_DOWN_CONN: 10, TICK_SECONDS: 5,
-                COOLDOWN_SECONDS: 10, COST_PER_REPLICA_SEC: 0.0001,
+                COOLDOWN_SECONDS: 10, WARMUP_SECONDS: 30, DRAIN_TIMEOUT_SECONDS: 30,
+                PRICING: {}, PRICING_CLOUD: 'aws',
                 ATTACK_MODE: 'yoyo', SLOW_TEST: 'slowloris',
                 SLOW_CONNS: 200, SLOW_RATE: 50, SLOW_INTERVAL: 10,
                 PULSE_ON: 20, PULSE_OFF: 20, EXPERIMENT_DURATION: 0
             });
+            const PROFILES = ['browsing', 'mailing', 'printing'];
+            const fleetTotal = computed(() =>
+                (config.FLEET || []).reduce((s, r) => s + (Number(r.count) || 0), 0));
+
+            // Multi-cloud cost profiles: pick one to load its defaults, still editable.
+            const cloudProfiles = ref({});
+            const selectedCloud = ref('aws');
+            const CLOUD_LABELS = { aws: 'AWS', azure: 'Microsoft Azure', gcp: 'Google Cloud' };
+            const cloudKeys = computed(() => Object.keys(cloudProfiles.value));
+            const applyCloud = (key) => {
+                config.PRICING_CLOUD = key;
+                const p = cloudProfiles.value[key];
+                if (p) config.PRICING = JSON.parse(JSON.stringify(p));  // deep copy; edits don't mutate the profile
+            };
+            const addFleetRow = () => {
+                if (!config.FLEET) config.FLEET = [];
+                config.FLEET.push({ profile: 'browsing', count: 1 });
+            };
+            const removeFleetRow = (i) => { config.FLEET.splice(i, 1); };
             const isUnlimited = ref(false);
             const current = ref(null);
             const history = ref([]);
@@ -400,7 +484,12 @@
             const loadDefaults = async () => {
                 try {
                     const data = await (await fetch('/api/defaults')).json();
+                    // Cloud profiles drive the dropdown, not the config payload.
+                    cloudProfiles.value = data.PRICING_PROFILES || {};
+                    selectedCloud.value = data.PRICING_CLOUD || 'aws';
+                    delete data.PRICING_PROFILES; delete data.PRICING_CLOUD;
                     Object.assign(config, data);
+                    config.PRICING_CLOUD = selectedCloud.value;
                     if (config.EXPERIMENT_DURATION === 0) isUnlimited.value = true;
                 } catch (e) { console.error(e); }
             };
@@ -408,7 +497,9 @@
             const validate = () => {
                 if (config.MIN_REPLICAS > config.MAX_REPLICAS) return toast('Réplicas mínimas não podem exceder as máximas', 'error'), false;
                 if (config.SCALE_DOWN_CONN >= config.SCALE_UP_CONN) return toast('Scale-down deve ser menor que scale-up', 'error'), false;
-                if (config.NUM_ATTACKERS > 9 || config.NUM_CLIENTS > 9) return toast('Máximo de 9 clientes e 9 atacantes', 'error'), false;
+                if (!config.FLEET || fleetTotal.value < 1) return toast('A frota benigna precisa de ao menos 1 cliente', 'error'), false;
+                if (fleetTotal.value > 9) return toast('Máximo de 9 clientes benignos na frota', 'error'), false;
+                if (config.NUM_ATTACKERS > 9) return toast('Máximo de 9 atacantes', 'error'), false;
                 return true;
             };
 
@@ -610,10 +701,48 @@
                 view, viewTitle, viewSubtitle, status, isRunning, logs, logBox, config, isUnlimited,
                 current, history, compareSel,
                 chartTimeline, chartCompare, fmtCost, modeLabel, attackDesc, underAttack,
-                startExperiment, stopExperiment, goResults, goHistory, loadHistory, openRun
+                startExperiment, stopExperiment, goResults, goHistory, loadHistory, openRun,
+                PROFILES, fleetTotal, addFleetRow, removeFleetRow,
+                cloudProfiles, selectedCloud, CLOUD_LABELS, cloudKeys, applyCloud
             };
         }
-    }).mount('#app');
+    });
+
+    // Reusable numeric control: a label + a number input you can TYPE into and,
+    // when a max is given, a slider bound to the same value (drag or type).
+    app.component('num-field', {
+        props: {
+            label: String,
+            modelValue: { type: Number, default: 0 },
+            min: { type: Number, default: 0 },
+            max: { type: Number, default: null },
+            step: { type: Number, default: 1 },
+            disabled: { type: Boolean, default: false },
+            width: { type: String, default: 'w-24' }
+        },
+        emits: ['update:modelValue'],
+        methods: {
+            emit(e) {
+                const v = e.target.value;
+                if (v === '') return;            // don't force 0 while retyping
+                this.$emit('update:modelValue', Number(v));
+            }
+        },
+        template: `
+            <div :class="disabled ? 'opacity-50' : ''">
+                <div class="flex items-center justify-between gap-3">
+                    <label class="text-sm text-slate2-700">{{ label }}</label>
+                    <input type="number" :value="modelValue" @input="emit"
+                        :min="min" :step="step" :disabled="disabled"
+                        :class="'field px-3 py-1.5 text-right ' + width">
+                </div>
+                <input v-if="max !== null" type="range" :value="modelValue" @input="emit"
+                    :min="min" :max="max" :step="step" :disabled="disabled"
+                    class="w-full mt-2 accent-teal-500 cursor-pointer disabled:cursor-not-allowed">
+            </div>`
+    });
+
+    app.mount('#app');
 </script>
 </body>
 </html>
