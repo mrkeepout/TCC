@@ -74,9 +74,11 @@ Selecionáveis em `edos_config.py` via `ATTACK_MODE`:
 | [`edos.py`](edos.py) | Orquestrador principal: monta a topologia, inicia captura, autoscaler e ataques; no `CTRL+C` faz teardown + relatórios |
 | [`edos_config.py`](edos_config.py) | Todos os parâmetros (IPs, limiares de scaling, modo/força de ataque, billing) |
 | [`edos_autoscaler.py`](edos_autoscaler.py) | Autoscaler elástico + contabilização de réplica-segundos |
+| [`edos_labeling.py`](edos_labeling.py) | Dedup da captura (borda cliente↔LB) + rotulagem bidirecional por faixa de IP |
 | [`loadbalancer/lb.py`](loadbalancer/lb.py) | Proxy TCP round-robin com backends recarregados dinamicamente |
 | [`edos_attack/edos_attacker.py`](edos_attack/edos_attacker.py) | Wrapper do slowhttptest (modos `sustained`/`yoyo`) |
-| [`legit_client.py`](legit_client.py) | Gerador de tráfego HTTP benigno |
+| [`client_profiles.py`](client_profiles.py) | Framework de clientes benignos configuráveis (perfis `browsing`/`mailing`/`printing` no motor SURGE) |
+| [`legit_client.py`](legit_client.py) | Gerador benigno ingênuo (single-rate) — **substituído** por `client_profiles.py`, mantido só para referência |
 
 ## Requisitos
 
@@ -112,7 +114,11 @@ containers, gera o relatório de fluxos e imprime o resumo de custo.
 | `SLOW_TEST` | `slowloris` / `slowpost` / `slowread` |
 | `SLOW_CONNS` / `SLOW_RATE` / `SLOW_INTERVAL` | Força do slowhttptest (`-c` / `-r` / `-i`) |
 | `PULSE_ON` / `PULSE_OFF` | Duração dos pulsos no modo `yoyo` |
-| `NUM_CLIENTS` / `NUM_ATTACKERS` | Tamanho das frotas benigna e maliciosa |
+| `FLEET` | Frota benigna declarativa: lista de `{profile, count}` (quantos e de qual tipo) |
+| `SEED` | Semente única do run, propagada aos clientes (reprodutibilidade) |
+| `NUM_CLIENTS` / `NUM_ATTACKERS` | Nº de atacantes; `NUM_CLIENTS` é fallback se `FLEET` estiver vazia |
+| `PCAP_ROTATE_SECONDS` | Intervalo de rotação do pcap (maior ⇒ corta menos conexões slow) |
+| `HEALTHCHECK_RETRIES` / `HEALTHCHECK_INTERVAL` | Tentativas/espera do health-check do VIP antes de medir |
 
 Sugestão para iterar rápido: `MIN=1, MAX=3, TICK=5s, PULSE_ON=20s, PULSE_OFF=20s,
 SLOW_CONNS≈200, SCALE_UP_CONN≈50/réplica`. Ajuste os limiares à capacidade da máquina
@@ -126,8 +132,15 @@ SLOW_CONNS≈200, SCALE_UP_CONN≈50/réplica`. Ajuste os limiares à capacidade
 - **Resumo de custo** (impresso no `CTRL+C`) — nº de eventos de scale-up/down, total
   de réplica-segundos e custo estimado.
 - **`flows/final_report.csv`** — estatísticas de fluxo geradas pelo
-  [CICFlowMeter](https://www.unb.ca/cic/research/applications.html), com tráfego
-  benigno e de ataque para análise/rotulação.
+  [CICFlowMeter](https://www.unb.ca/cic/research/applications.html), já
+  **deduplicadas** (só a borda cliente↔LB; o hop interno LB↔réplica é descartado)
+  e **rotuladas** na coluna `Label` por faixa de IP (`attack` p/ `.71–.79`,
+  `benign` p/ `.51–.59`). O rótulo checa **os dois extremos** do fluxo, então uma
+  conexão slow cortada pela rotação do pcap (direção invertida pelo CICFlowMeter)
+  ainda é rotulada corretamente. Ver [`edos_labeling.py`](edos_labeling.py).
+- **`flows/run_manifest.json`** — manifesto do run (git SHA, timestamp, semente,
+  duração, frota expandida e a configuração efetiva), para o dataset ser
+  regenerável e permitir o split Train/Test por run.
 
 ## Como verificar que está funcionando
 

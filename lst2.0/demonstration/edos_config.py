@@ -49,7 +49,26 @@ def attacker_ip(i: int) -> str:
     return subnet + str(70 + i)
 
 
-# --- Fleet sizes ---
+# --- Reproducibility ---
+# Single seed for the whole run, propagated to the benign clients (and later the
+# attack) so a run can be regenerated. Each client mixes this with its id, so the
+# fleet is deterministic yet its members are not identical.
+SEED = 1337
+
+# --- Benign fleet (configurable: how many, and which type) ---
+# Declarative fleet: each entry picks a client PROFILE and how many of it to run.
+# createClients() expands this into individual client containers on .51..59 and
+# launches client_profiles.py with the chosen profile. Grow the list without
+# touching the orchestration code. Profiles: browsing | mailing | printing
+# (the LST 2.0 behaviours reimplemented over HTTP in client_profiles.py).
+FLEET = [
+    {'profile': 'browsing', 'count': 2},   # SURGE: human-like page views
+    {'profile': 'mailing',  'count': 1},    # inbox fetch bursts + send w/ attachment
+    {'profile': 'printing', 'count': 1},    # occasional large document uploads
+]
+
+# Fallback: if FLEET is empty, fall back to NUM_CLIENTS homogeneous 'browsing'
+# clients so the old behaviour (a plain client count) still works.
 NUM_CLIENTS = 2
 NUM_ATTACKERS = 2
 
@@ -89,8 +108,19 @@ SLOW_READ_BYTES = 32      # slowhttptest -z : bytes read from the buffer per rea
 TARGET_VIP = lb_vip
 TARGET_PORT = 80
 
+# --- Capture / dataset ---
+# tshark rotates the pcap every PCAP_ROTATE_SECONDS. A larger value cuts fewer
+# long slow connections at a rotation boundary (fewer SYN-less halves for
+# CICFlowMeter to mis-direction), complementing the flip-robust labelling.
+PCAP_ROTATE_SECONDS = 300
+
+# --- Health check (abort early instead of capturing an empty run) ---
+HEALTHCHECK_RETRIES = 12
+HEALTHCHECK_INTERVAL = 3   # seconds between attempts
+
 # --- Output ---
 COST_CSV = 'flows/edos_cost.csv'
+RUN_MANIFEST = 'flows/run_manifest.json'
 
 # --- Experiment duration (0 = unlimited, stop with CTRL+C) ---
 EXPERIMENT_DURATION = 0
