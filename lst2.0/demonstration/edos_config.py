@@ -76,6 +76,11 @@ NUM_ATTACKERS = 2
 MIN_REPLICAS = 1
 MAX_REPLICAS = 3
 # Load signal = active connections on the LB VIP, normalized per active replica.
+# GROUND TRUTH: these thresholds should come from a replica's MEASURED capacity,
+# not a guess. Run `sudo python3 edos_benchmark.py` to sweep a single replica's
+# concurrency, find its saturation knee, and print SCALE_UP_CONN/SCALE_DOWN_CONN
+# as a target-utilisation fraction of that knee (see SCALE_TARGET_UTIL below).
+# The defaults here are a placeholder until the benchmark is run on your machine.
 SCALE_UP_CONN = 50      # if conns/replica exceeds this -> scale up
 SCALE_DOWN_CONN = 10    # if conns/replica drops below this -> scale down
 TICK_SECONDS = 5        # autoscaler sampling/decision interval
@@ -193,8 +198,15 @@ SLOW_TEST = 'slowloris'   # slowloris | slowpost | slowread
 SLOW_CONNS = 200          # slowhttptest -c : concurrent connections per attacker
 SLOW_RATE = 50            # slowhttptest -r : connections opened per second
 SLOW_INTERVAL = 3        # slowhttptest -i : seconds between follow-up data
-PULSE_ON = 20             # yoyo: seconds attacking
-PULSE_OFF = 20            # yoyo: seconds idle (let it scale down)
+# yoyo pulse timing MUST respect the replica lifecycle, or the service never
+# actually scales back down between pulses and the "yoyo" degenerates into a
+# "sustained" run (capacity only grows). Rules of thumb for the current autoscaler:
+#   PULSE_ON  >= WARMUP_SECONDS                          (new replicas warm & serve)
+#   PULSE_OFF >= SCALE_DOWN_TICKS*TICK_SECONDS + DRAIN_TIMEOUT_SECONDS
+#                                                        (scale-down debounces AND drains)
+# With WARMUP=30, DRAIN=30, SCALE_DOWN_TICKS=3, TICK=5 -> PULSE_OFF >= ~45s.
+PULSE_ON = 60             # yoyo: seconds attacking   (>= WARMUP so capacity serves)
+PULSE_OFF = 60            # yoyo: seconds idle        (>= debounce+DRAIN so it scales down)
 
 # Slow Read (-X) shaping: a small advertised window + slow read cadence keeps the
 # server-side connections established for the whole run (otherwise slowread
@@ -217,12 +229,27 @@ PCAP_ROTATE_SECONDS = 300
 HEALTHCHECK_RETRIES = 12
 HEALTHCHECK_INTERVAL = 3   # seconds between attempts
 
+# --- Capacity benchmark (edos_benchmark.py) ---
+# Sweeps simultaneous-connection levels against ONE replica to find its
+# saturation knee, giving the autoscaler thresholds a measured basis.
+BENCH_LEVELS = [10, 25, 50, 75, 100, 125, 150, 200, 250, 300]
+BENCH_DURATION = 8           # seconds of load per level
+BENCH_SLO_SUCCESS = 0.99     # min success rate for a level to count as "healthy"
+BENCH_SLO_P95_MS = 500       # max p95 latency (ms) for a level to count as "healthy"
+BENCH_STOP_AFTER_FAILS = 2   # stop the sweep after this many consecutive failing levels
+# Derive thresholds from the measured knee: scale up at TARGET_UTIL of capacity,
+# scale down below DOWN_UTIL (hysteresis). These replace the arbitrary defaults.
+SCALE_TARGET_UTIL = 0.75
+SCALE_DOWN_UTIL = 0.25
+
 # --- Output ---
 COST_CSV = 'flows/edos_cost.csv'
 RUN_MANIFEST = 'flows/run_manifest.json'
 
 # --- Experiment duration (0 = unlimited, stop with CTRL+C) ---
-EXPERIMENT_DURATION = 0
+# Default spans 3 full yoyo cycles (3 x (PULSE_ON+PULSE_OFF) = 3 x 120s), so a
+# default run actually shows repeated scale-up/scale-down instead of a single ramp.
+EXPERIMENT_DURATION = 360
 
 # --- Runtime overrides (used by edos_gui.py) ---
 # If the GUI is running, it writes a temporary .edos_overrides.py with only the

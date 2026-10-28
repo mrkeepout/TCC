@@ -76,6 +76,8 @@ Selecionáveis em `edos_config.py` via `ATTACK_MODE`:
 | [`edos_autoscaler.py`](edos_autoscaler.py) | Autoscaler elástico com ciclo de vida realista (warmup → active → draining), quantum mínimo de cobrança e custo LCU (compute + ALB + banda) |
 | [`edos_labeling.py`](edos_labeling.py) | Dedup da captura (borda cliente↔LB) + rotulagem bidirecional por faixa de IP |
 | [`edos_metrics.py`](edos_metrics.py) | Pós-processamento: métricas derivadas NCO / EAF / W_yoyo + agregados de QoS |
+| [`edos_benchmark.py`](edos_benchmark.py) | Benchmark de capacidade de 1 réplica: acha o ponto de saturação e recomenda `SCALE_UP_CONN`/`SCALE_DOWN_CONN` |
+| [`bench_load.py`](bench_load.py) | Gerador de carga (varredura de concorrência) usado pelo benchmark |
 | [`loadbalancer/lb.py`](loadbalancer/lb.py) | Proxy TCP round-robin com backends recarregados dinamicamente |
 | [`edos_attack/edos_attacker.py`](edos_attack/edos_attacker.py) | Wrapper do slowhttptest (modos `sustained`/`yoyo`) |
 | [`client_profiles.py`](client_profiles.py) | Framework de clientes benignos configuráveis (perfis `browsing`/`mailing`/`printing` no motor SURGE) |
@@ -109,12 +111,27 @@ python3 plot_edos.py       # flows/edos_plot.png (réplicas, conexões, custo)
 python3 edos_metrics.py    # flows/edos_metrics.json (NCO / EAF / W_yoyo + QoS)
 ```
 
+### Calibrar os limiares do autoscaler (ground truth)
+
+Os limiares `SCALE_UP_CONN`/`SCALE_DOWN_CONN` devem vir da **capacidade medida** de uma
+réplica, não de um chute. O benchmark sobe uma topologia mínima (1 réplica + 1 cliente),
+lê o teto configurado do Apache (`MaxRequestWorkers`) e varre níveis de concorrência para
+achar o **ponto de saturação** (maior concorrência ainda dentro do SLO de sucesso + p95):
+
+```bash
+sudo python3 edos_benchmark.py   # escreve flows/benchmark.json e imprime os limiares sugeridos
+```
+
+Ele recomenda `SCALE_UP_CONN = ponto de saturação × SCALE_TARGET_UTIL` (padrão 75%) e
+`SCALE_DOWN_CONN = ponto de saturação × SCALE_DOWN_UTIL` (padrão 25%) — copie para o `edos_config.py`.
+
 ## Parâmetros principais (`edos_config.py`)
 
 | Parâmetro | Significado |
 |---|---|
 | `MIN_REPLICAS` / `MAX_REPLICAS` | Limites do pool web |
-| `SCALE_UP_CONN` / `SCALE_DOWN_CONN` | Limiares de conexões **por réplica** para escalar |
+| `SCALE_UP_CONN` / `SCALE_DOWN_CONN` | Limiares de conexões **por réplica** para escalar — calibre com `edos_benchmark.py` |
+| `SCALE_TARGET_UTIL` / `SCALE_DOWN_UTIL` | Frações da capacidade (ponto de saturação) que viram os limiares acima (padrão 75% / 25%) |
 | `TICK_SECONDS` | Intervalo de amostragem/decisão do autoscaler |
 | `COOLDOWN_SECONDS` | Tempo mínimo entre duas ações de scaling |
 | `WARMUP_SECONDS` | Tempo que uma réplica nova fica **cobrada mas fora do pool** (janela que o yo-yo explora) |
@@ -124,16 +141,17 @@ python3 edos_metrics.py    # flows/edos_metrics.json (NCO / EAF / W_yoyo + QoS)
 | `ATTACK_MODE` | `sustained` ou `yoyo` |
 | `SLOW_TEST` | `slowloris` / `slowpost` / `slowread` |
 | `SLOW_CONNS` / `SLOW_RATE` / `SLOW_INTERVAL` | Força do slowhttptest (`-c` / `-r` / `-i`) |
-| `PULSE_ON` / `PULSE_OFF` | Duração dos pulsos no modo `yoyo` |
+| `PULSE_ON` / `PULSE_OFF` | Duração dos pulsos no modo `yoyo`. **Precisam respeitar o ciclo de vida da réplica**: `PULSE_ON ≥ WARMUP_SECONDS` e `PULSE_OFF ≥ SCALE_DOWN_TICKS·TICK + DRAIN_TIMEOUT` — senão o serviço nunca escala de volta e o yo-yo degenera em `sustained` |
 | `FLEET` | Frota benigna declarativa: lista de `{profile, count}` (quantos e de qual tipo) |
 | `SEED` | Semente única do run, propagada aos clientes (reprodutibilidade) |
 | `NUM_CLIENTS` / `NUM_ATTACKERS` | Nº de atacantes; `NUM_CLIENTS` é fallback se `FLEET` estiver vazia |
 | `PCAP_ROTATE_SECONDS` | Intervalo de rotação do pcap (maior ⇒ corta menos conexões slow) |
 | `HEALTHCHECK_RETRIES` / `HEALTHCHECK_INTERVAL` | Tentativas/espera do health-check do VIP antes de medir |
 
-Sugestão para iterar rápido: `MIN=1, MAX=3, TICK=5s, PULSE_ON=20s, PULSE_OFF=20s,
-SLOW_CONNS≈200, SCALE_UP_CONN≈50/réplica`. Ajuste os limiares à capacidade da máquina
-(o `MaxClients` do Apache define quantas conexões cada réplica aguenta).
+Sugestão (yo-yo que de fato oscila com warmup/drain de 30s): `MIN=1, MAX=3, TICK=5s,
+WARMUP=30s, DRAIN=30s, PULSE_ON=60s, PULSE_OFF=60s, EXPERIMENT_DURATION=360s` (3 ciclos),
+`SLOW_CONNS≈200`. Calibre `SCALE_UP_CONN`/`SCALE_DOWN_CONN` com `edos_benchmark.py`
+(a capacidade real da réplica, não um chute).
 
 ## Saídas geradas
 
@@ -164,6 +182,9 @@ SLOW_CONNS≈200, SCALE_UP_CONN≈50/réplica`. Ajuste os limiares à capacidade
   **EAF** (fator de amplificação econômica = dano por byte do atacante) e
   **W_yoyo** (fração de réplica-segundos desperdiçada nas fases `PULSE_OFF`), além
   de taxa de sucesso e percentis de latência do QoS (inclusive por fase ON/OFF).
+- **`flows/benchmark.json`** — resultado do `edos_benchmark.py`: teto configurado do
+  Apache, a varredura de concorrência, o ponto de saturação e os limiares
+  `SCALE_UP_CONN`/`SCALE_DOWN_CONN` recomendados.
 
 ## Como verificar que está funcionando
 

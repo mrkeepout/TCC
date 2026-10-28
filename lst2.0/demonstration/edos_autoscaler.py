@@ -254,7 +254,12 @@ class Autoscaler(threading.Thread):
                   "vm_cost,lcu_cost,bw_cost\n")
         with open(cfg.COST_CSV, 'w') as f:
             f.write(header)
+        # Prime the rate baselines with a REAL reading before the loop. Without
+        # this, the first tick differenced from 0 over a ~millisecond dt made the
+        # new-connections/s rate (and thus the LCU charge) explode by ~1e6x.
         self._prev_time = time.time()
+        self._prev_accepted = self._read_lb_file('/home/lb_total_conns') or 0
+        self._prev_bytes = self._read_lb_file('/home/lb_bytes') or 0
         while self._running:
             self._advance_lifecycle()
             now = time.time()
@@ -277,12 +282,15 @@ class Autoscaler(threading.Thread):
             self._prev_accepted = accepted
             self._prev_bytes = nbytes
 
-            # Bill the interval that just elapsed.
-            self.replica_seconds += billed * cfg.TICK_SECONDS
-            self.vm_cost += billed * self._p('p_vm_per_sec', 0.0) * cfg.TICK_SECONDS
+            # Bill the interval that just elapsed, using the REAL dt (not a fixed
+            # TICK). For the rate-based LCU term this makes the dt cancel out --
+            # p_lcu * (d_acc/dt / newdim) * dt = p_lcu * d_acc/newdim -- so a short
+            # or jittery interval bills the actual connections, never a blow-up.
+            self.replica_seconds += billed * dt
+            self.vm_cost += billed * self._p('p_vm_per_sec', 0.0) * dt
             lcu = max(conns / self._p('lcu_active_conn_dim', 3000.0),
                       new_conns_per_s / self._p('lcu_new_conn_dim', 25.0))
-            self.lcu_cost += self._p('p_lcu_per_sec', 0.0) * lcu * cfg.TICK_SECONDS
+            self.lcu_cost += self._p('p_lcu_per_sec', 0.0) * lcu * dt
             self.bw_cost += self._p('p_bw_per_gb', 0.0) * (d_bytes / 1e9)
             self.cost = self.vm_cost + self.lcu_cost + self.bw_cost
 

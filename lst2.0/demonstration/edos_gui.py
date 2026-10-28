@@ -19,6 +19,8 @@ BASE_DIR = Path(__file__).resolve().parent
 EDOS_SCRIPT = BASE_DIR / 'edos.py'
 PLOT_SCRIPT = BASE_DIR / 'plot_edos.py'
 METRICS_SCRIPT = BASE_DIR / 'edos_metrics.py'
+BENCHMARK_SCRIPT = BASE_DIR / 'edos_benchmark.py'
+BENCHMARK_JSON = BASE_DIR / 'flows' / 'benchmark.json'
 OVERRIDE_FILE = BASE_DIR / '.edos_overrides.py'
 COST_CSV = BASE_DIR / 'flows' / 'edos_cost.csv'
 COST_PLOT = BASE_DIR / 'flows' / 'edos_plot.png'
@@ -125,6 +127,63 @@ def run_experiment(config_data):
         with experiment_lock:
             experiment_process = None
             experiment_active = False
+
+def run_benchmark(config_data):
+    """Run the capacity benchmark as a subprocess, streaming its logs. Shares the
+    experiment's busy state so the two can't run at once (same Docker names)."""
+    global experiment_process, experiment_active
+    # Apply the current form values (e.g. TARGET_PORT) as an override, so the
+    # benchmark measures the same environment the experiment will run in.
+    override = ''.join(f"{k} = {repr(v)}\n" for k, v in (config_data or {}).items())
+    with open(OVERRIDE_FILE, 'w') as f:
+        f.write(override)
+    log_queue.put(">>> [GUI] Iniciando benchmark de capacidade da réplica...\n")
+    try:
+        cmd = ["python3", "-u", str(BENCHMARK_SCRIPT)]
+        if os.geteuid() != 0:
+            cmd = ["sudo"] + cmd
+            log_queue.put(">>> [GUI] Aviso: GUI sem root; inicie com 'sudo python3 edos_gui.py'.\n")
+        experiment_process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(BASE_DIR))
+        t = threading.Thread(target=enqueue_output, args=(experiment_process.stdout, log_queue))
+        t.daemon = True
+        t.start()
+        experiment_process.wait()
+    except Exception as e:
+        log_queue.put(f">>> [GUI] Erro no benchmark: {e}\n")
+    finally:
+        log_queue.put(">>> [GUI] Benchmark finalizado.\n")
+        if OVERRIDE_FILE.exists():
+            OVERRIDE_FILE.unlink()
+        with experiment_lock:
+            experiment_process = None
+            experiment_active = False
+
+
+@app.route('/api/benchmark/start', methods=['POST'])
+def benchmark_start():
+    global experiment_active
+    with experiment_lock:
+        if experiment_active:
+            return jsonify({'error': 'Já existe uma execução em andamento.'}), 400
+        config_data = request.json or {}
+        while not log_queue.empty():
+            log_queue.get_nowait()
+        experiment_active = True
+        threading.Thread(target=run_benchmark, args=(config_data,), daemon=True).start()
+        return jsonify({'status': 'started'})
+
+
+@app.route('/api/benchmark/result', methods=['GET'])
+def benchmark_result():
+    if BENCHMARK_JSON.exists():
+        try:
+            with open(BENCHMARK_JSON) as f:
+                return jsonify(json.load(f))
+        except (OSError, ValueError):
+            pass
+    return jsonify({'error': 'Nenhum resultado de benchmark disponível.'}), 404
+
 
 @app.route('/')
 def index():
