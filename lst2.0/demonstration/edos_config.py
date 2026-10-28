@@ -84,7 +84,49 @@ COOLDOWN_SECONDS = 10   # minimum time between two scaling actions
 # replica, so a single transient dip in the load signal can't tear down capacity
 # in the middle of a sustained attack (which caused up/down flapping).
 SCALE_DOWN_TICKS = 3
-COST_PER_REPLICA_SEC = 0.0001  # arbitrary billing unit (the "economic" meter)
+COST_PER_REPLICA_SEC = 0.0001  # legacy constant, kept for reference only; the
+#                                real cost now comes from PRICING below.
+
+# --- Autoscaler realism (Phase 2) -------------------------------------------
+# A provisioned replica does not serve instantly: it is billed (you pay for the
+# boot) but stays OUT of the LB pool for WARMUP_SECONDS. This is exactly the
+# window a yo-yo attack exploits -- capacity paid for but not yet useful.
+WARMUP_SECONDS = 30
+# On scale-down a replica is first removed from the pool (no new connections),
+# then kept alive for DRAIN_TIMEOUT_SECONDS so in-flight legitimate connections
+# finish instead of being cut (maps to an ALB target deregistration delay). It
+# is still billed while draining.
+DRAIN_TIMEOUT_SECONDS = 30
+
+# --- Cost model: pluggable pricing profile (AWS reference) ------------------
+# Replaces the single arbitrary COST_PER_REPLICA_SEC with a documented, swappable
+# profile. Total cost over the run is
+#
+#   C = Σ_k p_vm · R_billed(t_k) · Δt                          (compute)
+#     + Σ_k p_lcu · max(C_conn/conn_dim, R_new/newconn_dim) · Δt  (ALB LCU)
+#     + p_bw · Σ_k B(t_k)                                        (data processed)
+#
+# where R_billed counts every ALIVE replica (warming + active + draining) and a
+# replica that lives less than billing_quantum_sec is still charged the full
+# quantum -- which is what makes a yo-yo (rapid up/down) economically distinct
+# from a sustained attack. Every number cites its source so the model is
+# defensible and can be swapped for GCP/Azure.
+PRICING = {
+    'cloud': 'AWS us-east-1 (reference)',
+    'p_vm_per_sec': 0.0416 / 3600,   # EC2 t3.medium on-demand, $0.0416/h
+    'p_lcu_per_sec': 0.008 / 3600,   # ALB, $0.008 per LCU-hour
+    'lcu_active_conn_dim': 3000.0,   # ALB LCU: 3000 active connections = 1 LCU
+    'lcu_new_conn_dim': 25.0,        # ALB LCU: 25 new connections/s   = 1 LCU
+    'p_bw_per_gb': 0.09,             # data transfer out, ~$0.09/GB
+    'billing_quantum_sec': 60.0,     # EC2 per-second billing has a 60s minimum
+    'sources': {
+        'p_vm_per_sec': 'AWS EC2 t3.medium on-demand us-east-1 ($0.0416/h)',
+        'p_lcu_per_sec': 'AWS ALB pricing ($0.008 per LCU-hour)',
+        'lcu_dims': 'AWS ALB LCU dimensions: 25 new conn/s, 3000 active conn, 1 GB/h',
+        'p_bw_per_gb': 'AWS EC2 data transfer out (~$0.09/GB)',
+        'billing_quantum_sec': 'AWS EC2 per-second billing, 60s minimum charge',
+    },
+}
 
 # --- Attack model (slowhttptest driven) ---
 # ATTACK_MODE: "sustained" keeps the service pinned at MAX; "yoyo" pulses the

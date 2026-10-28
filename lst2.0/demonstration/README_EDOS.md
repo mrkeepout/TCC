@@ -73,7 +73,7 @@ Selecionáveis em `edos_config.py` via `ATTACK_MODE`:
 |---|---|
 | [`edos.py`](edos.py) | Orquestrador principal: monta a topologia, inicia captura, autoscaler e ataques; no `CTRL+C` faz teardown + relatórios |
 | [`edos_config.py`](edos_config.py) | Todos os parâmetros (IPs, limiares de scaling, modo/força de ataque, billing) |
-| [`edos_autoscaler.py`](edos_autoscaler.py) | Autoscaler elástico + contabilização de réplica-segundos |
+| [`edos_autoscaler.py`](edos_autoscaler.py) | Autoscaler elástico com ciclo de vida realista (warmup → active → draining), quantum mínimo de cobrança e custo LCU (compute + ALB + banda) |
 | [`edos_labeling.py`](edos_labeling.py) | Dedup da captura (borda cliente↔LB) + rotulagem bidirecional por faixa de IP |
 | [`loadbalancer/lb.py`](loadbalancer/lb.py) | Proxy TCP round-robin com backends recarregados dinamicamente |
 | [`edos_attack/edos_attacker.py`](edos_attack/edos_attacker.py) | Wrapper do slowhttptest (modos `sustained`/`yoyo`) |
@@ -109,7 +109,10 @@ containers, gera o relatório de fluxos e imprime o resumo de custo.
 | `SCALE_UP_CONN` / `SCALE_DOWN_CONN` | Limiares de conexões **por réplica** para escalar |
 | `TICK_SECONDS` | Intervalo de amostragem/decisão do autoscaler |
 | `COOLDOWN_SECONDS` | Tempo mínimo entre duas ações de scaling |
-| `COST_PER_REPLICA_SEC` | Unidade de custo por réplica-segundo (o "preço" da nuvem) |
+| `WARMUP_SECONDS` | Tempo que uma réplica nova fica **cobrada mas fora do pool** (janela que o yo-yo explora) |
+| `DRAIN_TIMEOUT_SECONDS` | Janela de *connection draining* no scale-down antes de remover a réplica |
+| `PRICING` | Perfil de preços plugável (AWS): custo de VM, LCU da ALB (conexões ativas/novas), banda e **quantum mínimo de cobrança** |
+| `COST_PER_REPLICA_SEC` | *(legado)* constante antiga mantida só para referência; o custo real vem de `PRICING` |
 | `ATTACK_MODE` | `sustained` ou `yoyo` |
 | `SLOW_TEST` | `slowloris` / `slowpost` / `slowread` |
 | `SLOW_CONNS` / `SLOW_RATE` / `SLOW_INTERVAL` | Força do slowhttptest (`-c` / `-r` / `-i`) |
@@ -126,11 +129,14 @@ SLOW_CONNS≈200, SCALE_UP_CONN≈50/réplica`. Ajuste os limiares à capacidade
 
 ## Saídas geradas
 
-- **`flows/edos_cost.csv`** — linha do tempo `timestamp, active_replicas,
-  active_conns, cumulative_cost` (uma linha por tick). É a evidência quantitativa do
-  EDoS: dá pra plotar réplicas e custo ao longo do ataque.
-- **Resumo de custo** (impresso no `CTRL+C`) — nº de eventos de scale-up/down, total
-  de réplica-segundos e custo estimado.
+- **`flows/edos_cost.csv`** — linha do tempo por tick. Colunas: `timestamp,
+  active_replicas` (réplicas **cobradas** = warming+active+draining)`, active_conns,
+  cumulative_cost` (compatíveis com o `plot_edos.py`), mais as colunas da Fase 2:
+  `warming, active, draining, new_conns_per_s, bytes_per_s, vm_cost, lcu_cost,
+  bw_cost`. É a evidência quantitativa do EDoS.
+- **Resumo de custo** (impresso no `CTRL+C`) — eventos de scale-up/down,
+  réplica-segundos (incluindo os cobrados pelo quantum mínimo) e o custo decomposto
+  em **compute + LCU da ALB + banda**.
 - **`flows/final_report.csv`** — estatísticas de fluxo geradas pelo
   [CICFlowMeter](https://www.unb.ca/cic/research/applications.html), já
   **deduplicadas** (só a borda cliente↔LB; o hop interno LB↔réplica é descartado)
