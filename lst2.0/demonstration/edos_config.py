@@ -40,13 +40,16 @@ def web_ip(i: int) -> str:
 
 
 def client_ip(i: int) -> str:
-    # Legitimate clients occupy .51 .. .59 (l1 -> .51)
+    # Legitimate clients occupy .51 .. .99 (l1 -> .51); up to 49 clients, no
+    # artificial cap. The block ends before .100 (bridge/gateway/controller).
     return subnet + str(50 + i)
 
 
 def attacker_ip(i: int) -> str:
-    # Attackers occupy .71 .. .79 (a1 -> .71)
-    return subnet + str(70 + i)
+    # Attackers occupy .103 .. .254 (a1 -> .103); up to ~152 attackers, no
+    # artificial cap. Moved above the control plane (.100-.102) so the benign
+    # client block below could grow without colliding with the attacker range.
+    return subnet + str(102 + i)
 
 
 # --- Reproducibility ---
@@ -60,11 +63,13 @@ SEED = 1337
 # createClients() expands this into individual client containers on .51..59 and
 # launches client_profiles.py with the chosen profile. Grow the list without
 # touching the orchestration code. Profiles: browsing | mailing | printing
-# (the LST 2.0 behaviours reimplemented over HTTP in client_profiles.py).
+# | mixed (the LST 2.0 behaviours reimplemented over HTTP in client_profiles.py).
+# 'mixed' is a single client that intercalates all three activities, like a real
+# user who browses, checks mail and prints in the same working session.
 FLEET = [
-    {'profile': 'browsing', 'count': 2},   # SURGE: human-like page views
+    {'profile': 'mixed',    'count': 2},   # usuário real: as 3 atividades juntas
+    {'profile': 'browsing', 'count': 1},   # SURGE: human-like page views
     {'profile': 'mailing',  'count': 1},    # inbox fetch bursts + send w/ attachment
-    {'profile': 'printing', 'count': 1},    # occasional large document uploads
 ]
 
 # Fallback: if FLEET is empty, fall back to NUM_CLIENTS homogeneous 'browsing'

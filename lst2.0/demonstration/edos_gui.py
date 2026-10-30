@@ -205,7 +205,7 @@ def get_defaults():
     defaults = {
         # Benign fleet is now declarative (how many + which profile).
         'FLEET': getattr(edos_config, 'FLEET',
-                         [{'profile': 'browsing', 'count': 2}]),
+                         [{'profile': 'mixed', 'count': 2}]),
         'SEED': getattr(edos_config, 'SEED', 1337),
         'NUM_ATTACKERS': getattr(edos_config, 'NUM_ATTACKERS', 2),
         'MIN_REPLICAS': getattr(edos_config, 'MIN_REPLICAS', 1),

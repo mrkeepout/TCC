@@ -139,7 +139,7 @@
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">🖧 Topologia</h2>
                         <div class="space-y-4">
-                            <num-field label="Atacantes" v-model="config.NUM_ATTACKERS" :min="1" :max="9" :disabled="isRunning"></num-field>
+                            <num-field label="Atacantes" v-model="config.NUM_ATTACKERS" :min="0" :max="152" :disabled="isRunning"></num-field>
                             <num-field label="Réplicas mínimas" v-model="config.MIN_REPLICAS" :min="1" :max="9" :disabled="isRunning"></num-field>
                             <num-field label="Réplicas máximas" v-model="config.MAX_REPLICAS" :min="1" :max="9" :disabled="isRunning"></num-field>
                             <num-field label="Semente (seed)" v-model="config.SEED" :min="0" :disabled="isRunning" width="w-28"></num-field>
@@ -149,18 +149,18 @@
                     <!-- Tráfego benigno -->
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">
-                            👥 Tráfego benigno <span class="text-xs font-normal text-slate2-500 ml-auto">{{ fleetTotal }}/9 clientes</span>
+                            👥 Tráfego benigno <span class="text-xs font-normal text-slate2-500 ml-auto">{{ fleetTotal }}/49 clientes</span>
                         </h2>
                         <div class="space-y-2">
                             <div v-for="(row,i) in config.FLEET" :key="i" class="flex items-center gap-2">
                                 <select v-model="row.profile" :disabled="isRunning" class="field px-3 py-1.5 flex-1">
                                     <option v-for="p in PROFILES" :value="p">{{ p }}</option>
                                 </select>
-                                <input type="number" min="1" max="9" v-model.number="row.count" :disabled="isRunning" class="field px-3 py-1.5 w-20 text-right">
+                                <input type="number" min="0" max="49" v-model.number="row.count" :disabled="isRunning" class="field px-3 py-1.5 w-20 text-right">
                                 <button @click="removeFleetRow(i)" :disabled="isRunning || config.FLEET.length<=1" class="text-slate2-400 hover:text-red-500 px-2 disabled:opacity-30" title="Remover">✕</button>
                             </div>
                             <button @click="addFleetRow" :disabled="isRunning" class="text-sm text-teal-600 hover:text-teal-500 mt-1 disabled:opacity-40">+ Adicionar perfil</button>
-                            <p class="text-[11px] text-slate2-500 pt-1">Perfis HTTP (motor SURGE): <b>browsing</b> navegação, <b>mailing</b> rajadas + anexo, <b>printing</b> uploads grandes esporádicos.</p>
+                            <p class="text-[11px] text-slate2-500 pt-1">Perfis HTTP (motor SURGE): <b>mixed</b> usuário real (as 3 atividades juntas), <b>browsing</b> navegação, <b>mailing</b> rajadas + anexo, <b>printing</b> uploads grandes esporádicos.</p>
                         </div>
                     </section>
 
@@ -472,7 +472,7 @@
             const logs = ref([]);
             const logBox = ref(null);
             const config = reactive({
-                FLEET: [{ profile: 'browsing', count: 2 }], SEED: 1337,
+                FLEET: [{ profile: 'mixed', count: 2 }], SEED: 1337,
                 NUM_ATTACKERS: 2, MIN_REPLICAS: 1, MAX_REPLICAS: 3,
                 SCALE_UP_CONN: 50, SCALE_DOWN_CONN: 10, TICK_SECONDS: 5,
                 COOLDOWN_SECONDS: 10, WARMUP_SECONDS: 30, DRAIN_TIMEOUT_SECONDS: 30,
@@ -481,7 +481,7 @@
                 SLOW_CONNS: 200, SLOW_RATE: 50, SLOW_INTERVAL: 10,
                 PULSE_ON: 20, PULSE_OFF: 20, EXPERIMENT_DURATION: 0
             });
-            const PROFILES = ['browsing', 'mailing', 'printing'];
+            const PROFILES = ['mixed', 'browsing', 'mailing', 'printing'];
             const fleetTotal = computed(() =>
                 (config.FLEET || []).reduce((s, r) => s + (Number(r.count) || 0), 0));
 
@@ -613,9 +613,9 @@
             const validate = () => {
                 if (config.MIN_REPLICAS > config.MAX_REPLICAS) return toast('Réplicas mínimas não podem exceder as máximas', 'error'), false;
                 if (config.SCALE_DOWN_CONN >= config.SCALE_UP_CONN) return toast('Scale-down deve ser menor que scale-up', 'error'), false;
-                if (!config.FLEET || fleetTotal.value < 1) return toast('O tráfego benigno precisa de ao menos 1 cliente', 'error'), false;
-                if (fleetTotal.value > 9) return toast('Máximo de 9 clientes no tráfego benigno', 'error'), false;
-                if (config.NUM_ATTACKERS > 9) return toast('Máximo de 9 atacantes', 'error'), false;
+                if (!config.FLEET) return toast('Configure o tráfego benigno', 'error'), false;
+                if (fleetTotal.value > 49) return toast('Máximo de 49 clientes benignos (faixa de IP .51-.99)', 'error'), false;
+                if (config.NUM_ATTACKERS > 152) return toast('Máximo de 152 atacantes (faixa de IP .103-.254)', 'error'), false;
                 return true;
             };
 

@@ -25,7 +25,7 @@
 #    this robust to the direction flips below.
 #
 # #2 Labelling: CICFlowMeter leaves Label empty/placeholder. We fill it by IP
-#    range (resolved decision #2: only external attackers on .71-.79). Because
+#    range (resolved decision #2: only external attackers on .103-.254). Because
 #    tshark rotates the pcap mid-capture, a long slow connection can be cut and,
 #    missing its SYN, CICFlowMeter infers the WRONG direction (Src/Dst flipped).
 #    So the label checks BOTH endpoints against the attacker range, never Src
@@ -34,12 +34,13 @@
 from typing import List, Tuple
 
 # Host-role octet ranges on the EDoS /24 (mirror the allocation in edos_config:
-# web_ip = 20+i, client_ip = 50+i, attacker_ip = 70+i, lb_vip = .10). Kept as a
-# superset of the configured fleet sizes so it stays valid as they grow.
+# web_ip = 20+i, client_ip = 50+i, attacker_ip = 102+i, lb_vip = .10). Kept as a
+# superset of the configured fleet sizes so it stays valid as they grow: the
+# fleets have no fixed cap, so each range spans its whole collision-free block.
 LB_OCTET = 10
-BACKEND_OCTETS = range(21, 30)   # web replicas w1..w9
-CLIENT_OCTETS = range(51, 60)    # benign clients l1..l9
-ATTACKER_OCTETS = range(71, 80)  # external attackers a1..a9
+BACKEND_OCTETS = range(21, 30)    # web replicas w1..w9
+CLIENT_OCTETS = range(51, 100)    # benign clients l1..l49 (.51-.99)
+ATTACKER_OCTETS = range(103, 255)  # external attackers a1..a152 (.103-.254)
 
 # CICFlowMeter column headers we touch.
 COL_SRC = 'Src IP'

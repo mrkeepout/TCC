@@ -319,11 +319,59 @@ class Printing(ClientProfile):
         return self._think(25.0, hi=40.0)
 
 
+# Peso por atividade no perfil misto: um usuário navega muito, envia e-mail com
+# frequência média e imprime pouco. Ajustável sem tocar na lógica.
+ACTIVITY_WEIGHTS = {'browsing': 0.6, 'mailing': 0.3, 'printing': 0.1}
+
+
+class MixedUser(ClientProfile):
+    """Usuário benigno misto: a cada sessão sorteia UMA entre browsing, mailing e
+    printing (pesada por ACTIVITY_WEIGHTS) e emite aquele burst, intercalando as
+    três ao longo da vida do cliente -- como um usuário real que navega, checa
+    e-mail e imprime na mesma sessão de trabalho.
+
+    Compõe as três atividades já existentes em vez de reimplementá-las: delega
+    build_session()/idle_after_session() à atividade sorteada. Todas as atividades
+    compartilham o MESMO self._rng (ver _make_activity), senão o run deixaria de
+    ser reproduzível."""
+
+    def __init__(self, config: ClientConfig) -> None:
+        super().__init__(config)
+        self._acts = {
+            'browsing': self._make_activity(Browsing, config),
+            'mailing':  self._make_activity(Mailing, config),
+            'printing': self._make_activity(Printing, config),
+        }
+        self._names = list(self._acts)
+        self._weights = [ACTIVITY_WEIGHTS[n] for n in self._names]
+        self._last = self._names[0]
+
+    def _make_activity(self, cls, config: ClientConfig) -> ClientProfile:
+        """Instancia uma atividade e injeta o RNG do MixedUser, para que o sorteio
+        de atividade e os samplers de todas as três consumam a MESMA sequência
+        determinística (reprodutibilidade por seed/client_id)."""
+        act = cls(config)
+        act._rng = self._rng
+        return act
+
+    def build_session(self) -> List[Request]:
+        self._last = self._rng.choices(self._names, weights=self._weights, k=1)[0]
+        sys.stderr.write(
+            f"[client] profile={self.name} id={self._config.client_id} "
+            f"activity={self._last}\n")
+        sys.stderr.flush()
+        return self._acts[self._last].build_session()
+
+    def idle_after_session(self) -> float:
+        return self._acts[self._last].idle_after_session()
+
+
 # Registry: the name used in the FLEET config -> the profile class.
 PROFILES = {
     'browsing': Browsing,
     'mailing': Mailing,
     'printing': Printing,
+    'mixed': MixedUser,
 }
 
 
