@@ -37,6 +37,17 @@ CONN_COUNT = 0
 _count_lock = threading.Lock()
 CONN_COUNT_FILE = '/home/lb_conns'
 
+# Cumulative counters for the autoscaler's LCU cost model: total connections
+# ever accepted (-> new connections/s, an ALB LCU dimension) and total bytes
+# relayed (-> bandwidth). The autoscaler reads these per tick and differences
+# them into rates. Published to files, like the live count above.
+TOTAL_ACCEPTED = 0
+TOTAL_BYTES = 0
+_accept_lock = threading.Lock()
+_bytes_lock = threading.Lock()
+TOTAL_CONN_FILE = '/home/lb_total_conns'
+BYTES_FILE = '/home/lb_bytes'
+
 
 def _adjust_count(delta):
     global CONN_COUNT
@@ -44,14 +55,33 @@ def _adjust_count(delta):
         CONN_COUNT += delta
 
 
+def _add_accepted():
+    global TOTAL_ACCEPTED
+    with _accept_lock:
+        TOTAL_ACCEPTED += 1
+
+
+def _add_bytes(n):
+    global TOTAL_BYTES
+    with _bytes_lock:
+        TOTAL_BYTES += n
+
+
 def _publish_count_loop():
-    # Persist the live count roughly once a second so the autoscaler can read it.
+    # Persist the live count and the cumulative counters roughly once a second
+    # so the autoscaler can read them.
     while True:
         try:
             with _count_lock:
                 value = CONN_COUNT
-            with open(CONN_COUNT_FILE, 'w') as f:
-                f.write(f"{value}\n")
+            with _accept_lock:
+                accepted = TOTAL_ACCEPTED
+            with _bytes_lock:
+                nbytes = TOTAL_BYTES
+            for p, v in ((CONN_COUNT_FILE, value), (TOTAL_CONN_FILE, accepted),
+                         (BYTES_FILE, nbytes)):
+                with open(p, 'w') as f:
+                    f.write(f"{v}\n")
         except OSError:
             pass
         time.sleep(1)
@@ -91,6 +121,7 @@ def pipe(src, dst):
             if not data:
                 break
             dst.sendall(data)
+            _add_bytes(len(data))
     except OSError:
         pass
     finally:
@@ -105,6 +136,7 @@ def handle(client, backends_path):
     # Count this connection for its whole lifetime: this runs in its own thread
     # (spawned per accept), so joining the relay below does not block accepts.
     _adjust_count(1)
+    _add_accepted()  # cumulative: feeds the new-connections/s LCU dimension
     try:
         backends = read_backends(backends_path)
         if not backends:

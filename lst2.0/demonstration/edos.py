@@ -20,6 +20,7 @@
 # the cost the attack inflates. Mirrors the structure of cidds.py. Press CTRL+C
 # once to tear everything down and emit the flow + cost reports.
 
+import json
 import signal
 import subprocess
 import sys
@@ -33,6 +34,7 @@ from controller import Controller
 from cicflowmeter import CICFlowMeter
 
 import edos_config as cfg
+import edos_labeling
 from edos_autoscaler import Autoscaler
 
 nodes = {}
@@ -91,17 +93,36 @@ def startLoadBalancer() -> None:
         f"/home/backends.txt > /home/lb.log 2>&1 &'")
 
 
+def expandFleet() -> list:
+    # Flatten the declarative FLEET ({profile, count}, ...) into one profile name
+    # per client container. Fall back to NUM_CLIENTS homogeneous 'browsing'
+    # clients if FLEET is empty, preserving the old "just a client count" usage.
+    fleet = getattr(cfg, 'FLEET', None)
+    if not fleet:
+        return ['browsing'] * cfg.NUM_CLIENTS
+    profiles = []
+    for entry in fleet:
+        profiles.extend([entry['profile']] * int(entry.get('count', 1)))
+    return profiles
+
+
 def createClients() -> None:
-    for i in range(1, cfg.NUM_CLIENTS + 1):
+    profiles = expandFleet()
+    seed = getattr(cfg, 'SEED', 0)
+    duration = getattr(cfg, 'EXPERIMENT_DURATION', 0)
+    for i, profile in enumerate(profiles, start=1):
         name = f"l{i}"
-        printTerm(f"[LST2.0][EDoS] Creating benign client {name}")
+        printTerm(f"[LST2.0][EDoS] Creating benign client {name} (profile={profile})")
         nodes[name] = Host(name)
         nodes[name].instantiate(cfg.linuxclient)
         attachHost(nodes[name], cfg.client_ip(i))
-        nodes[name].copyLocalToContainer('legit_client.py', '/home/legit_client.py')
+        nodes[name].copyLocalToContainer('client_profiles.py', '/home/client_profiles.py')
         nodes[name].run(
-            f"bash -c 'python3 /home/legit_client.py {cfg.TARGET_VIP} "
-            f"{cfg.TARGET_PORT} > /home/client.log 2>&1 &'")
+            f"bash -c 'python3 /home/client_profiles.py "
+            f"--profile {profile} --target {cfg.TARGET_VIP} "
+            f"--port {cfg.TARGET_PORT} --seed {seed} --client-id {i} "
+            f"--duration {duration} --qos-csv /home/client_qos.csv "
+            f"> /home/client.log 2>&1 &'")
 
 
 def createAttackers() -> None:
@@ -126,8 +147,84 @@ def createAttackers() -> None:
             f"--read-bytes {cfg.SLOW_READ_BYTES} > /home/attacker.log 2>&1 &'")
 
 
+# --- Pre-flight: health check + run manifest ------------------------------
+def healthCheck() -> None:
+    # Confirm the VIP actually serves before we start capturing/attacking, so a
+    # topology that didn't come up aborts early instead of producing a silently
+    # empty run. Drives the LB container itself, which proxies to the pool.
+    retries = getattr(cfg, 'HEALTHCHECK_RETRIES', 12)
+    interval = getattr(cfg, 'HEALTHCHECK_INTERVAL', 3)
+    url = f"http://{cfg.TARGET_VIP}:{cfg.TARGET_PORT}/"
+    printTerm(f"[LST2.0][EDoS] Health check: waiting for {url} to serve...")
+    for attempt in range(1, retries + 1):
+        r = subprocess.run(f"docker exec lb wget -q -T 4 -O - {url}",
+                           shell=True, capture_output=True)
+        if r.returncode == 0:
+            printTerm(f"[LST2.0][EDoS] ... VIP healthy on attempt {attempt}")
+            return
+        time.sleep(interval)
+    raise Exception(
+        f"VIP {url} did not serve after {retries} attempts -- aborting "
+        f"(topology/load balancer/replica did not come up)")
+
+
+def writeManifest() -> None:
+    # A dataset must be regenerable: record exactly what produced this run (git
+    # SHA, seed, effective config, fleet, timing) so a later split-by-run can be
+    # reconstructed. Any JSON-serializable public config value is captured.
+    def effective_config():
+        out = {}
+        for k in dir(cfg):
+            if k.startswith('_'):
+                continue
+            v = getattr(cfg, k)
+            if callable(v) or type(v).__name__ == 'module':
+                continue
+            try:
+                json.dumps(v)
+                out[k] = v
+            except TypeError:
+                pass
+        return out
+
+    sha = subprocess.run("git rev-parse HEAD", shell=True,
+                         capture_output=True).stdout.decode('utf8', 'ignore').strip()
+    dirty = subprocess.run("git status --porcelain", shell=True,
+                           capture_output=True).stdout.decode('utf8', 'ignore').strip()
+    manifest = {
+        'git_sha': sha or 'unknown',
+        'git_dirty': bool(dirty),
+        'timestamp_iso': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+        'timestamp_epoch': int(RUN_START),
+        'seed': getattr(cfg, 'SEED', 0),
+        'duration': getattr(cfg, 'EXPERIMENT_DURATION', 0),
+        'fleet_expanded': expandFleet(),
+        'config': effective_config(),
+    }
+    with open(cfg.RUN_MANIFEST, 'w') as f:
+        json.dump(manifest, f, indent=2)
+    printTerm(f"[LST2.0][EDoS] Run manifest -> {cfg.RUN_MANIFEST} "
+              f"(git {(sha or 'unknown')[:8]}{' +dirty' if dirty else ''}, "
+              f"seed {getattr(cfg, 'SEED', 0)})")
+
+
 # --- Teardown / reporting -------------------------------------------------
+def collectClientQoS():
+    # Pull each benign client's per-request QoS log OUT of its container before
+    # the container is destroyed -- otherwise the data (latency/success of the
+    # legitimate user, i.e. the attack's collateral damage) dies with it.
+    for name, node in nodes.items():
+        if not name.startswith('l'):
+            continue
+        try:
+            node.copyContainerToLocal('/home/client_qos.csv',
+                                      f'flows/qos_{name}.csv')
+        except Exception:
+            pass  # a client that never wrote a QoS file just has nothing to copy
+
+
 def unmakeChanges():
+    collectClientQoS()
     printTerm("[LST2.0][EDoS] Deleting containers")
     if autoscaler is not None:
         autoscaler.delete_replicas()
@@ -153,16 +250,31 @@ def convertPcap():
     # Only CICFlowMeter's output (named after the dump*.pcap files), not
     # edos_cost*.csv or a previous final_report.csv.
     csvs = glob('flows/dump*.csv')
-    contents = []
+    # De-duplicate the proxy's double-count (#1) and label by IP range (#2),
+    # per-file so each file's own header locates the Src/Dst/Label columns.
+    canonical_header = ''
+    all_rows = []
+    totals = {'kept': 0, 'dropped_internal': 0, 'attack': 0, 'benign': 0,
+              'unknown': 0, 'malformed': 0}
     for c in csvs:
         with open(c, 'r') as f:
-            contents.append(f.read())
-    merged = '\n'.join(contents).split('\n')
-    header = merged[0] if merged else ''
-    body = [ln for ln in merged if 'Flow ID' not in ln]
+            lines = [ln for ln in f.read().splitlines() if ln.strip()]
+        if not lines:
+            continue
+        header, rows, stats = edos_labeling.process_rows(lines[0], lines[1:])
+        canonical_header = header
+        all_rows.extend(rows)
+        for k in totals:
+            totals[k] += stats.get(k, 0)
     subprocess.run('rm -f flows/dump*', shell=True)
     with open(hostPath + '/final_report.csv', 'w') as f:
-        f.write(header + '\n' + '\n'.join(body))
+        f.write(canonical_header + '\n' + '\n'.join(all_rows) + '\n')
+    printTerm(
+        f"[LST2.0][EDoS] Dataset: {totals['kept']} flows kept "
+        f"(attack={totals['attack']} benign={totals['benign']} "
+        f"unknown={totals['unknown']}), "
+        f"{totals['dropped_internal']} internal-hop flows dropped (dedup), "
+        f"{totals['malformed']} malformed")
 
 
 def signal_handler(sig, frame):
@@ -196,10 +308,16 @@ try:
     autoscaler.provision_initial()
     startLoadBalancer()
 
+    # Pre-flight: don't measure anything until the service actually serves, and
+    # record how this run was produced (seed, config, git SHA) for reproducibility.
+    healthCheck()
+    writeManifest()
+
     createClients()
     createAttackers()
 
-    nodes['br0'].collectFlows(path='home/pcap', sniffAll=True)
+    nodes['br0'].collectFlows(path='home/pcap', sniffAll=True,
+                              rotateInterval=getattr(cfg, 'PCAP_ROTATE_SECONDS', 60))
     autoscaler.start()
 except Exception as ex:
     unmakeChanges()

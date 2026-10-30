@@ -125,33 +125,79 @@
         <main class="p-8 flex-1">
 
             <!-- ============ EXPERIMENT VIEW ============ -->
-            <div v-show="view==='experiment'" class="space-y-6 max-w-6xl">
-                <div v-if="isRunning" class="card p-4 flex items-center gap-3 !bg-emerald-50 !border-emerald-200">
+            <div v-show="view==='experiment'" class="max-w-[95rem]">
+                <div v-if="isRunning" class="card p-4 mb-6 flex items-center gap-3 !bg-emerald-50 !border-emerald-200">
                     <span class="text-emerald-600">●</span>
-                    <span class="text-sm text-emerald-800">Experimento em curso. Os parâmetros ficam bloqueados até a parada.</span>
+                    <span class="text-sm text-emerald-800">Execução em curso. Os parâmetros ficam bloqueados até a parada.</span>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_30rem] gap-6 items-start">
+                    <!-- LEFT: configuração -->
+                    <div class="space-y-6 min-w-0">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- Topologia -->
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">🖧 Topologia</h2>
-                        <div class="space-y-3">
-                            <div class="row"><label>Clientes legítimos</label><input type="number" min="1" max="9" v-model.number="config.NUM_CLIENTS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Atacantes</label><input type="number" min="1" max="9" v-model.number="config.NUM_ATTACKERS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Réplicas mínimas</label><input type="number" min="1" v-model.number="config.MIN_REPLICAS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Réplicas máximas</label><input type="number" min="1" v-model.number="config.MAX_REPLICAS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                        <div class="space-y-4">
+                            <num-field label="Atacantes" v-model="config.NUM_ATTACKERS" :min="0" :max="152" :disabled="isRunning"></num-field>
+                            <num-field label="Réplicas mínimas" v-model="config.MIN_REPLICAS" :min="1" :max="9" :disabled="isRunning"></num-field>
+                            <num-field label="Réplicas máximas" v-model="config.MAX_REPLICAS" :min="1" :max="9" :disabled="isRunning"></num-field>
+                            <num-field label="Semente (seed)" v-model="config.SEED" :min="0" :disabled="isRunning" width="w-28"></num-field>
+                        </div>
+                    </section>
+
+                    <!-- Tráfego benigno -->
+                    <section class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">
+                            👥 Tráfego benigno <span class="text-xs font-normal text-slate2-500 ml-auto">{{ fleetTotal }}/49 clientes</span>
+                        </h2>
+                        <div class="space-y-2">
+                            <div v-for="(row,i) in config.FLEET" :key="i" class="flex items-center gap-2">
+                                <select v-model="row.profile" :disabled="isRunning" class="field px-3 py-1.5 flex-1">
+                                    <option v-for="p in PROFILES" :value="p">{{ p }}</option>
+                                </select>
+                                <input type="number" min="0" max="49" v-model.number="row.count" :disabled="isRunning" class="field px-3 py-1.5 w-20 text-right">
+                                <button @click="removeFleetRow(i)" :disabled="isRunning || config.FLEET.length<=1" class="text-slate2-400 hover:text-red-500 px-2 disabled:opacity-30" title="Remover">✕</button>
+                            </div>
+                            <button @click="addFleetRow" :disabled="isRunning" class="text-sm text-teal-600 hover:text-teal-500 mt-1 disabled:opacity-40">+ Adicionar perfil</button>
+                            <p class="text-[11px] text-slate2-500 pt-1">Perfis HTTP (motor SURGE): <b>mixed</b> usuário real (as 3 atividades juntas), <b>browsing</b> navegação, <b>mailing</b> rajadas + anexo, <b>printing</b> uploads grandes esporádicos.</p>
                         </div>
                     </section>
 
                     <!-- Autoscaler -->
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">⚙️ Autoscaler</h2>
-                        <div class="space-y-3">
-                            <div class="row"><label>Scale-up (conns/rep)</label><input type="number" min="1" v-model.number="config.SCALE_UP_CONN" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Scale-down (conns/rep)</label><input type="number" min="1" v-model.number="config.SCALE_DOWN_CONN" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Tick de amostragem (s)</label><input type="number" min="1" v-model.number="config.TICK_SECONDS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Cooldown (s)</label><input type="number" min="1" v-model.number="config.COOLDOWN_SECONDS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Custo (réplica-s)</label><input type="number" step="0.0001" v-model.number="config.COST_PER_REPLICA_SEC" :disabled="isRunning" class="field px-3 py-1.5 w-28 text-right"></div>
+                        <div class="space-y-4">
+                            <num-field label="Scale-up (conns/rep)" v-model="config.SCALE_UP_CONN" :min="1" :max="300" :disabled="isRunning"></num-field>
+                            <num-field label="Scale-down (conns/rep)" v-model="config.SCALE_DOWN_CONN" :min="1" :max="100" :disabled="isRunning"></num-field>
+                            <num-field label="Tick de amostragem (s)" v-model="config.TICK_SECONDS" :min="1" :max="60" :disabled="isRunning"></num-field>
+                            <num-field label="Cooldown (s)" v-model="config.COOLDOWN_SECONDS" :min="1" :max="120" :disabled="isRunning"></num-field>
+                            <num-field label="Warmup da réplica (s)" v-model="config.WARMUP_SECONDS" :min="0" :max="120" :step="5" :disabled="isRunning"></num-field>
+                            <num-field label="Draining no scale-down (s)" v-model="config.DRAIN_TIMEOUT_SECONDS" :min="0" :max="120" :step="5" :disabled="isRunning"></num-field>
+
+                            <div class="pt-3 mt-1 border-t border-cloud-200">
+                                <button @click="runBenchmark" :disabled="isRunning"
+                                    class="w-full text-sm font-medium px-3 py-2 rounded-lg bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed">
+                                    📏 Calibrar ambiente (benchmark de capacidade)
+                                </button>
+                                <p class="text-[11px] text-slate2-500 mt-1.5">Mede a capacidade de uma réplica nesta máquina e sugere os limiares de escala com base no ponto de saturação.</p>
+
+                                <div v-if="benchmarkResult && benchmarkResult.recommended" class="mt-3 p-3 rounded-lg bg-cloud-50 border border-cloud-200">
+                                    <div class="text-xs text-slate2-700">
+                                        Teto do Apache: <b>{{ benchmarkResult.configured_max_workers || '—' }}</b> ·
+                                        ponto de saturação: <b>{{ benchmarkResult.knee_concurrency || '—' }}</b> conexões
+                                    </div>
+                                    <div class="text-sm text-ink-900 mt-1">
+                                        Sugerido: <b>SCALE_UP={{ benchmarkResult.recommended.SCALE_UP_CONN }}</b>,
+                                        <b>SCALE_DOWN={{ benchmarkResult.recommended.SCALE_DOWN_CONN }}</b>
+                                        <span class="text-[11px] text-slate2-500">({{ (benchmarkResult.target_util*100).toFixed(0) }}% / {{ (benchmarkResult.down_util*100).toFixed(0) }}% da capacidade)</span>
+                                    </div>
+                                    <button @click="applyBenchmark" :disabled="isRunning"
+                                        class="mt-2 text-xs font-medium px-3 py-1.5 rounded-md border border-teal-500 text-teal-600 hover:bg-teal-50 disabled:opacity-40">
+                                        Aplicar à configuração
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </section>
 
@@ -172,36 +218,77 @@
                                     <option value="slowread">Slow Read</option>
                                 </select>
                             </div>
-                            <div class="row"><label>Conexões / origem</label><input type="number" min="1" v-model.number="config.SLOW_CONNS" :disabled="isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Pulso ativo (s)</label><input type="number" v-model.number="config.PULSE_ON" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
-                            <div class="row"><label>Pulso ocioso (s)</label><input type="number" v-model.number="config.PULSE_OFF" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                            <num-field label="Conexões / origem" v-model="config.SLOW_CONNS" :min="1" :max="1000" :step="10" :disabled="isRunning"></num-field>
+                            <num-field label="Pulso ativo (s)" v-model="config.PULSE_ON" :min="1" :max="180" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning"></num-field>
+                            <num-field label="Pulso ocioso (s)" v-model="config.PULSE_OFF" :min="1" :max="180" :disabled="config.ATTACK_MODE!=='yoyo' || isRunning"></num-field>
+                            <p v-if="yoyoWarning" class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 leading-snug">
+                                ⚠️ {{ yoyoWarning }}.
+                            </p>
                         </div>
                     </section>
 
                     <!-- Duração -->
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">⏱️ Duração</h2>
-                        <div class="space-y-3">
-                            <div class="row"><label>Duração automática (s)</label><input type="number" min="0" v-model.number="config.EXPERIMENT_DURATION" :disabled="isUnlimited || isRunning" class="field px-3 py-1.5 w-24 text-right"></div>
+                        <div class="space-y-4">
+                            <num-field label="Duração automática (s)" v-model="config.EXPERIMENT_DURATION" :min="0" :max="600" :step="10" :disabled="isUnlimited || isRunning"></num-field>
                             <label class="flex items-center gap-2 text-sm text-slate2-700">
                                 <input type="checkbox" v-model="isUnlimited" :disabled="isRunning" class="accent-teal-500 w-4 h-4">
                                 Sem limite (parar manualmente)
                             </label>
                         </div>
                     </section>
-                </div>
 
-                <!-- Log ao vivo -->
-                <section class="card overflow-hidden">
-                    <div class="flex items-center justify-between px-4 py-2.5 bg-ink-900 text-slate2-400">
-                        <span class="font-mono text-xs">edos.py — saída ao vivo</span>
-                        <button @click="logs=[]" class="text-xs hover:text-white">Limpar</button>
+                    <!-- Modelo de custo (LCU) -->
+                    <section class="card p-6" v-if="config.PRICING">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">
+                            💲 Modelo de custo <span class="text-xs font-normal text-slate2-500 ml-auto">{{ config.PRICING.cloud || 'perfil de preços' }}</span>
+                        </h2>
+                        <div class="space-y-4">
+                            <div class="row"><label>Nuvem (carrega o padrão)</label>
+                                <select v-model="selectedCloud" @change="applyCloud(selectedCloud)" :disabled="isRunning" class="field px-3 py-1.5 w-44">
+                                    <option v-for="k in cloudKeys" :value="k">{{ CLOUD_LABELS[k] || k }}</option>
+                                </select>
+                            </div>
+                            <p class="text-[11px] text-slate2-500 -mt-1">Troque a nuvem para carregar os preços padrão; os campos abaixo continuam editáveis.</p>
+                            <num-field label="Compute / VM ($/s)" v-model="config.PRICING.p_vm_per_sec" :min="0" :step="0.0000001" :disabled="isRunning" width="w-32"></num-field>
+                            <num-field label="LCU da ALB ($/s)" v-model="config.PRICING.p_lcu_per_sec" :min="0" :step="0.0000001" :disabled="isRunning" width="w-32"></num-field>
+                            <num-field label="LCU: conexões ativas" v-model="config.PRICING.lcu_active_conn_dim" :min="100" :max="5000" :step="100" :disabled="isRunning"></num-field>
+                            <num-field label="LCU: novas conexões/s" v-model="config.PRICING.lcu_new_conn_dim" :min="1" :max="100" :disabled="isRunning"></num-field>
+                            <num-field label="Banda ($/GB)" v-model="config.PRICING.p_bw_per_gb" :min="0" :max="1" :step="0.01" :disabled="isRunning" width="w-28"></num-field>
+                            <num-field label="Quantum mínimo (s)" v-model="config.PRICING.billing_quantum_sec" :min="0" :max="300" :step="10" :disabled="isRunning"></num-field>
+                        </div>
+                    </section>
+                        </div>
                     </div>
-                    <div ref="logBox" class="terminal p-4 h-72 overflow-y-auto text-[13px] bg-[#0d1b2a] text-slate-200">
-                        <div v-for="(l,i) in logs" :key="i" v-text="l"></div>
-                        <div v-if="!logs.length" class="text-slate-500 italic">Os logs do experimento aparecerão aqui…</div>
+
+                    <!-- RIGHT: monitor sticky (log + gráficos em tempo real) -->
+                    <div class="space-y-4 xl:sticky xl:top-4 self-start">
+                        <section class="card overflow-hidden">
+                            <div class="flex items-center justify-between px-4 py-2.5 bg-ink-900 text-slate2-400">
+                                <span class="font-mono text-xs">saída ao vivo</span>
+                                <button @click="logs=[]" class="text-xs hover:text-white">Limpar</button>
+                            </div>
+                            <div ref="logBox" class="terminal p-4 h-64 overflow-y-auto text-[12px] bg-[#0d1b2a] text-slate-200">
+                                <div v-for="(l,i) in logs" :key="i" v-text="l"></div>
+                                <div v-if="!logs.length" class="text-slate-500 italic">Os logs aparecerão aqui…</div>
+                            </div>
+                        </section>
+
+                        <section class="card p-4">
+                            <h2 class="font-semibold text-ink-900 text-sm flex items-center gap-2 mb-2">
+                                📊 Monitor em tempo real
+                                <span class="text-[11px] font-normal text-slate2-500 ml-auto">{{ runKind==='benchmark' ? 'benchmark' : 'experimento' }}</span>
+                            </h2>
+                            <div v-show="hasLive" ref="chartLive" style="width:100%;height:230px"></div>
+                            <div v-if="!hasLive" class="flex items-center justify-center text-center text-xs text-slate2-400" style="height:230px">
+                                Os gráficos se desenham conforme o autoscaler/benchmark reporta no log.
+                            </div>
+                            <p v-if="hasLive && runKind!=='benchmark'" class="text-[11px] text-slate2-500 mt-1">réplicas e conexões (esq.) · custo acumulado (dir.)</p>
+                            <p v-if="hasLive && runKind==='benchmark'" class="text-[11px] text-slate2-500 mt-1">p95 de latência (esq.) · sucesso % (dir.) por concorrência</p>
+                        </section>
                     </div>
-                </section>
+                </div>
             </div>
 
             <!-- ============ RESULTS VIEW ============ -->
@@ -233,6 +320,29 @@
                             <div class="text-xs text-slate2-500 mt-2">{{ attackDesc }}</div>
                         </div>
                     </div>
+
+                    <!-- Derived metrics (NCO / EAF / W_yoyo + QoS) -->
+                    <section v-if="current.metrics" class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">📐 Métricas derivadas</h2>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div><div class="text-xs text-slate2-500">NCO — overhead de custo</div>
+                                <div class="text-2xl font-bold text-ink-900">{{ current.metrics.NCO != null ? '+' + (current.metrics.NCO*100).toFixed(0) + '%' : '—' }}</div>
+                                <div class="text-[11px] text-slate2-500">sobre o baseline mínimo</div></div>
+                            <div><div class="text-xs text-slate2-500">EAF — dano por MB</div>
+                                <div class="text-2xl font-bold text-ink-900">{{ current.metrics.EAF_cost_per_MB != null ? current.metrics.EAF_cost_per_MB.toFixed(4) : '—' }}</div>
+                                <div class="text-[11px] text-slate2-500">custo extra / byte do atacante</div></div>
+                            <div><div class="text-xs text-slate2-500">W_yoyo — desperdício</div>
+                                <div class="text-2xl font-bold text-ink-900">{{ current.metrics.W_yoyo != null ? (current.metrics.W_yoyo*100).toFixed(0) + '%' : '—' }}</div>
+                                <div class="text-[11px] text-slate2-500">réplica-s em fases OFF</div></div>
+                            <div><div class="text-xs text-slate2-500">QoS — sucesso benigno</div>
+                                <div class="text-2xl font-bold text-ink-900">{{ current.metrics.qos && current.metrics.qos.success_rate != null ? (current.metrics.qos.success_rate*100).toFixed(1) + '%' : '—' }}</div>
+                                <div class="text-[11px] text-slate2-500" v-if="current.metrics.qos">{{ current.metrics.qos.requests }} reqs · p95 {{ current.metrics.qos.latency_ms && current.metrics.qos.latency_ms.p95 != null ? current.metrics.qos.latency_ms.p95.toFixed(0)+'ms' : '—' }}</div></div>
+                        </div>
+                        <p v-if="current.metrics.qos && current.metrics.qos.success_rate_attack_on != null" class="text-[11px] text-slate2-500 mt-3">
+                            Sucesso sob pulso de ataque: <b>{{ (current.metrics.qos.success_rate_attack_on*100).toFixed(0) }}%</b> (ON)
+                            vs <b>{{ (current.metrics.qos.success_rate_attack_off*100).toFixed(0) }}%</b> (OFF) — o dano colateral ao usuário legítimo.
+                        </p>
+                    </section>
 
                     <!-- One figure, shared time axis: attack -> autoscaler reaction -> bill -->
                     <section class="card p-6">
@@ -355,26 +465,116 @@
         showlegend: false
     });
 
-    createApp({
+    const app = createApp({
         setup() {
             const view = ref('experiment');
             const status = ref('idle');
             const logs = ref([]);
             const logBox = ref(null);
             const config = reactive({
-                NUM_CLIENTS: 2, NUM_ATTACKERS: 2, MIN_REPLICAS: 1, MAX_REPLICAS: 3,
+                FLEET: [{ profile: 'mixed', count: 2 }], SEED: 1337,
+                NUM_ATTACKERS: 2, MIN_REPLICAS: 1, MAX_REPLICAS: 3,
                 SCALE_UP_CONN: 50, SCALE_DOWN_CONN: 10, TICK_SECONDS: 5,
-                COOLDOWN_SECONDS: 10, COST_PER_REPLICA_SEC: 0.0001,
+                COOLDOWN_SECONDS: 10, WARMUP_SECONDS: 30, DRAIN_TIMEOUT_SECONDS: 30,
+                PRICING: {}, PRICING_CLOUD: 'aws',
                 ATTACK_MODE: 'yoyo', SLOW_TEST: 'slowloris',
                 SLOW_CONNS: 200, SLOW_RATE: 50, SLOW_INTERVAL: 10,
                 PULSE_ON: 20, PULSE_OFF: 20, EXPERIMENT_DURATION: 0
             });
+            const PROFILES = ['mixed', 'browsing', 'mailing', 'printing'];
+            const fleetTotal = computed(() =>
+                (config.FLEET || []).reduce((s, r) => s + (Number(r.count) || 0), 0));
+
+            // Multi-cloud cost profiles: pick one to load its defaults, still editable.
+            const cloudProfiles = ref({});
+            const selectedCloud = ref('aws');
+            const CLOUD_LABELS = { aws: 'AWS', azure: 'Microsoft Azure', gcp: 'Google Cloud' };
+            const cloudKeys = computed(() => Object.keys(cloudProfiles.value));
+            const applyCloud = (key) => {
+                config.PRICING_CLOUD = key;
+                const p = cloudProfiles.value[key];
+                if (p) config.PRICING = JSON.parse(JSON.stringify(p));  // deep copy; edits don't mutate the profile
+            };
+
+            // Warn when yoyo pulses are too short for the replica lifecycle, which
+            // would make the service never scale back down (yoyo -> sustained).
+            const yoyoWarning = computed(() => {
+                if (config.ATTACK_MODE !== 'yoyo') return '';
+                const debounce = (config.TICK_SECONDS || 5) * 3; // SCALE_DOWN_TICKS≈3
+                const minOff = (config.DRAIN_TIMEOUT_SECONDS || 0) + debounce;
+                const msgs = [];
+                if (config.PULSE_ON < config.WARMUP_SECONDS)
+                    msgs.push(`pulso ativo (${config.PULSE_ON}s) < warmup (${config.WARMUP_SECONDS}s) — réplicas novas não chegam a servir`);
+                if (config.PULSE_OFF < minOff)
+                    msgs.push(`pulso ocioso (${config.PULSE_OFF}s) < drain+debounce (~${minOff}s) — o serviço não escala de volta e o yo-yo vira "sustained"`);
+                return msgs.join('; ');
+            });
+            const addFleetRow = () => {
+                if (!config.FLEET) config.FLEET = [];
+                config.FLEET.push({ profile: 'browsing', count: 1 });
+            };
+            const removeFleetRow = (i) => { config.FLEET.splice(i, 1); };
             const isUnlimited = ref(false);
             const current = ref(null);
             const history = ref([]);
+            const runKind = ref('experiment');      // what the live log/stream is for
+            const benchmarkResult = ref(null);       // last capacity benchmark result
             const compareSel = ref([]);
             const chartTimeline = ref(null), chartCompare = ref(null);
+            const chartLive = ref(null);
             let eventSource = null;
+
+            // --- Real-time monitor: series parsed live from the log stream ----
+            const live = reactive({ t: [], replicas: [], conns: [], cost: [],
+                                    bconc: [], bp95: [], bsucc: [], lastConc: null });
+            const hasLive = computed(() => live.t.length > 0 || live.bconc.length > 0);
+            const resetLive = () => {
+                live.t = []; live.replicas = []; live.conns = []; live.cost = [];
+                live.bconc = []; live.bp95 = []; live.bsucc = []; live.lastConc = null;
+            };
+            const parseLogLine = (line) => {
+                // Autoscaler tick: billed=N (wW/aA/dD) conns=C new/s=R cost=X
+                let m = line.match(/billed=(\d+) \(w(\d+)\/a(\d+)\/d(\d+)\) conns=(\d+) new\/s=([\d.]+) cost=([\d.]+)/);
+                if (m) {
+                    live.t.push(live.t.length);
+                    live.replicas.push(+m[1]); live.conns.push(+m[5]); live.cost.push(+m[7]);
+                    return true;
+                }
+                // Benchmark: a "level concurrency=N" line, then a "success=.. p95=..ms" line
+                let c = line.match(/level concurrency=(\d+)/);
+                if (c) { live.lastConc = +c[1]; return false; }
+                let b = line.match(/success=([\d.]+) p95=(\d+)ms/);
+                if (b && live.lastConc != null) {
+                    live.bconc.push(live.lastConc); live.bp95.push(+b[2]); live.bsucc.push(+b[1] * 100);
+                    live.lastConc = null;
+                    return true;
+                }
+                return false;
+            };
+            const renderLive = () => {
+                if (!chartLive.value) return;
+                const L = { margin: { t: 8, r: 44, b: 34, l: 38 }, height: 230,
+                            showlegend: true, legend: { orientation: 'h', y: -0.28, font: { size: 10 } },
+                            font: { size: 10 }, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)' };
+                if (runKind.value === 'benchmark') {
+                    if (!live.bconc.length) return;
+                    Plotly.react(chartLive.value, [
+                        { x: live.bconc, y: live.bp95, name: 'p95 (ms)', mode: 'lines+markers', line: { color: '#eb6834', width: 2 } },
+                        { x: live.bconc, y: live.bsucc, name: 'sucesso (%)', yaxis: 'y2', mode: 'lines+markers', line: { color: '#12a594', width: 2 } },
+                    ], { ...L, xaxis: { title: 'concorrência' }, yaxis: { title: 'p95 ms', rangemode: 'tozero' },
+                         yaxis2: { overlaying: 'y', side: 'right', range: [0, 100] } },
+                       { responsive: true, displayModeBar: false });
+                } else {
+                    if (!live.t.length) return;
+                    Plotly.react(chartLive.value, [
+                        { x: live.t, y: live.replicas, name: 'réplicas', mode: 'lines', line: { shape: 'hv', color: '#eb6834', width: 2 } },
+                        { x: live.t, y: live.conns, name: 'conexões', mode: 'lines', line: { color: '#2a78d6', width: 1.5 } },
+                        { x: live.t, y: live.cost, name: 'custo', yaxis: 'y2', mode: 'lines', line: { color: '#12a594', width: 2 } },
+                    ], { ...L, xaxis: { title: 'tick' }, yaxis: { title: 'rép / conn', rangemode: 'tozero' },
+                         yaxis2: { overlaying: 'y', side: 'right', title: 'custo', rangemode: 'tozero' } },
+                       { responsive: true, displayModeBar: false });
+                }
+            };
 
             const isRunning = computed(() => status.value === 'running');
             const titles = {
@@ -400,7 +600,12 @@
             const loadDefaults = async () => {
                 try {
                     const data = await (await fetch('/api/defaults')).json();
+                    // Cloud profiles drive the dropdown, not the config payload.
+                    cloudProfiles.value = data.PRICING_PROFILES || {};
+                    selectedCloud.value = data.PRICING_CLOUD || 'aws';
+                    delete data.PRICING_PROFILES; delete data.PRICING_CLOUD;
                     Object.assign(config, data);
+                    config.PRICING_CLOUD = selectedCloud.value;
                     if (config.EXPERIMENT_DURATION === 0) isUnlimited.value = true;
                 } catch (e) { console.error(e); }
             };
@@ -408,19 +613,47 @@
             const validate = () => {
                 if (config.MIN_REPLICAS > config.MAX_REPLICAS) return toast('Réplicas mínimas não podem exceder as máximas', 'error'), false;
                 if (config.SCALE_DOWN_CONN >= config.SCALE_UP_CONN) return toast('Scale-down deve ser menor que scale-up', 'error'), false;
-                if (config.NUM_ATTACKERS > 9 || config.NUM_CLIENTS > 9) return toast('Máximo de 9 clientes e 9 atacantes', 'error'), false;
+                if (!config.FLEET) return toast('Configure o tráfego benigno', 'error'), false;
+                if (fleetTotal.value > 49) return toast('Máximo de 49 clientes benignos (faixa de IP .51-.99)', 'error'), false;
+                if (config.NUM_ATTACKERS > 152) return toast('Máximo de 152 atacantes (faixa de IP .103-.254)', 'error'), false;
                 return true;
             };
 
             const startExperiment = async () => {
                 if (isRunning.value || !validate()) return;
-                logs.value = []; current.value = null; view.value = 'experiment';
+                logs.value = []; current.value = null; view.value = 'experiment'; runKind.value = 'experiment'; resetLive();
                 try {
                     const res = await fetch('/api/start', { method: 'POST',
                         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
                     if (res.ok) { status.value = 'running'; toast('Experimento iniciado', 'success'); startLogStream(); }
                     else toast((await res.json()).error || 'Erro ao iniciar', 'error');
                 } catch (e) { toast('Falha de conexão com o backend', 'error'); }
+            };
+
+            // Capacity benchmark: measure this machine's per-replica limit, then
+            // suggest ground-truthed scale thresholds the user can apply.
+            const runBenchmark = async () => {
+                if (isRunning.value) return;
+                logs.value = []; benchmarkResult.value = null; view.value = 'experiment'; runKind.value = 'benchmark'; resetLive();
+                try {
+                    const res = await fetch('/api/benchmark/start', { method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
+                    if (res.ok) { status.value = 'running'; toast('Benchmark iniciado', 'success'); startLogStream(); }
+                    else toast((await res.json()).error || 'Erro ao iniciar', 'error');
+                } catch (e) { toast('Falha de conexão com o backend', 'error'); }
+            };
+            const fetchBenchmark = async () => {
+                try {
+                    const res = await fetch('/api/benchmark/result');
+                    if (res.ok) benchmarkResult.value = await res.json();
+                } catch (e) { console.error(e); }
+            };
+            const applyBenchmark = () => {
+                const r = benchmarkResult.value && benchmarkResult.value.recommended;
+                if (!r) return;
+                config.SCALE_UP_CONN = r.SCALE_UP_CONN;
+                config.SCALE_DOWN_CONN = r.SCALE_DOWN_CONN;
+                toast('Limiares aplicados à configuração', 'success');
             };
 
             const stopExperiment = async () => {
@@ -437,12 +670,21 @@
                 eventSource = new EventSource('/api/logs');
                 eventSource.onmessage = e => {
                     const d = JSON.parse(e.data);
-                    if (d.line) { logs.value.push(d.line); nextTick(scrollLog); }
+                    if (d.line) {
+                        logs.value.push(d.line);
+                        if (parseLogLine(d.line)) nextTick(renderLive);
+                        nextTick(scrollLog);
+                    }
                 };
                 eventSource.addEventListener('done', async () => {
                     eventSource.close(); status.value = 'idle';
-                    toast('Experimento concluído', 'success');
-                    await openRun(null);
+                    if (runKind.value === 'benchmark') {
+                        toast('Benchmark concluído', 'success');
+                        await fetchBenchmark();
+                    } else {
+                        toast('Experimento concluído', 'success');
+                        await openRun(null);
+                    }
                 });
                 eventSource.onerror = () => setTimeout(checkStatus, 2000);
             };
@@ -610,10 +852,50 @@
                 view, viewTitle, viewSubtitle, status, isRunning, logs, logBox, config, isUnlimited,
                 current, history, compareSel,
                 chartTimeline, chartCompare, fmtCost, modeLabel, attackDesc, underAttack,
-                startExperiment, stopExperiment, goResults, goHistory, loadHistory, openRun
+                startExperiment, stopExperiment, goResults, goHistory, loadHistory, openRun,
+                PROFILES, fleetTotal, addFleetRow, removeFleetRow,
+                cloudProfiles, selectedCloud, CLOUD_LABELS, cloudKeys, applyCloud,
+                runKind, benchmarkResult, runBenchmark, applyBenchmark,
+                chartLive, hasLive, live, yoyoWarning
             };
         }
-    }).mount('#app');
+    });
+
+    // Reusable numeric control: a label + a number input you can TYPE into and,
+    // when a max is given, a slider bound to the same value (drag or type).
+    app.component('num-field', {
+        props: {
+            label: String,
+            modelValue: { type: Number, default: 0 },
+            min: { type: Number, default: 0 },
+            max: { type: Number, default: null },
+            step: { type: Number, default: 1 },
+            disabled: { type: Boolean, default: false },
+            width: { type: String, default: 'w-24' }
+        },
+        emits: ['update:modelValue'],
+        methods: {
+            emit(e) {
+                const v = e.target.value;
+                if (v === '') return;            // don't force 0 while retyping
+                this.$emit('update:modelValue', Number(v));
+            }
+        },
+        template: `
+            <div :class="disabled ? 'opacity-50' : ''">
+                <div class="flex items-center justify-between gap-3">
+                    <label class="text-sm text-slate2-700">{{ label }}</label>
+                    <input type="number" :value="modelValue" @input="emit"
+                        :min="min" :step="step" :disabled="disabled"
+                        :class="'field px-3 py-1.5 text-right ' + width">
+                </div>
+                <input v-if="max !== null" type="range" :value="modelValue" @input="emit"
+                    :min="min" :max="max" :step="step" :disabled="disabled"
+                    class="w-full mt-2 accent-teal-500 cursor-pointer disabled:cursor-not-allowed">
+            </div>`
+    });
+
+    app.mount('#app');
 </script>
 </body>
 </html>
