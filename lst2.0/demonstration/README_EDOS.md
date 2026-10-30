@@ -142,7 +142,7 @@ Ele recomenda `SCALE_UP_CONN = ponto de saturação × SCALE_TARGET_UTIL` (padr�
 | `SLOW_TEST` | `slowloris` / `slowpost` / `slowread` |
 | `SLOW_CONNS` / `SLOW_RATE` / `SLOW_INTERVAL` | Força do slowhttptest (`-c` / `-r` / `-i`) |
 | `PULSE_ON` / `PULSE_OFF` | Duração dos pulsos no modo `yoyo`. **Precisam respeitar o ciclo de vida da réplica**: `PULSE_ON ≥ WARMUP_SECONDS` e `PULSE_OFF ≥ SCALE_DOWN_TICKS·TICK + DRAIN_TIMEOUT` — senão o serviço nunca escala de volta e o yo-yo degenera em `sustained` |
-| `FLEET` | Frota benigna declarativa: lista de `{profile, count}` (quantos e de qual tipo) |
+| `FLEET` | Tráfego benigno declarativo: lista de `{profile, count}` (quantos e de qual tipo) |
 | `SEED` | Semente única do run, propagada aos clientes (reprodutibilidade) |
 | `NUM_CLIENTS` / `NUM_ATTACKERS` | Nº de atacantes; `NUM_CLIENTS` é fallback se `FLEET` estiver vazia |
 | `PCAP_ROTATE_SECONDS` | Intervalo de rotação do pcap (maior ⇒ corta menos conexões slow) |

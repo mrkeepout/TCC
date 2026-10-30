@@ -146,10 +146,10 @@
                         </div>
                     </section>
 
-                    <!-- Frota benigna -->
+                    <!-- Tráfego benigno -->
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">
-                            👥 Frota benigna <span class="text-xs font-normal text-slate2-500 ml-auto">{{ fleetTotal }}/9 clientes</span>
+                            👥 Tráfego benigno <span class="text-xs font-normal text-slate2-500 ml-auto">{{ fleetTotal }}/9 clientes</span>
                         </h2>
                         <div class="space-y-2">
                             <div v-for="(row,i) in config.FLEET" :key="i" class="flex items-center gap-2">
@@ -613,8 +613,8 @@
             const validate = () => {
                 if (config.MIN_REPLICAS > config.MAX_REPLICAS) return toast('Réplicas mínimas não podem exceder as máximas', 'error'), false;
                 if (config.SCALE_DOWN_CONN >= config.SCALE_UP_CONN) return toast('Scale-down deve ser menor que scale-up', 'error'), false;
-                if (!config.FLEET || fleetTotal.value < 1) return toast('A frota benigna precisa de ao menos 1 cliente', 'error'), false;
-                if (fleetTotal.value > 9) return toast('Máximo de 9 clientes benignos na frota', 'error'), false;
+                if (!config.FLEET || fleetTotal.value < 1) return toast('O tráfego benigno precisa de ao menos 1 cliente', 'error'), false;
+                if (fleetTotal.value > 9) return toast('Máximo de 9 clientes no tráfego benigno', 'error'), false;
                 if (config.NUM_ATTACKERS > 9) return toast('Máximo de 9 atacantes', 'error'), false;
                 return true;
             };
