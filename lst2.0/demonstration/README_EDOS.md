@@ -4,7 +4,7 @@ Topologia e ferramental para emular e estudar ataques **EDoS (Economic Denial of
 Sustainability)** em ambientes de nuvem elástica, construída sobre o
 [Lightweight SDN Testbed (LST) 2.0](../README.md).
 
-> Trabalho de Conclusão de Curso — **mrkeepout** e **Matheus (matw4b)**.
+> Trabalho de Conclusão de Curso — **Gabriel (mrkeepout)** e **Matheus (matw4b)**.
 > Fork de [alexandrekaihara/lst2.0](https://github.com/alexandrekaihara/lst2.0).
 
 ## O que é EDoS (e por que não é só DoS)
@@ -20,7 +20,7 @@ o LST não tinha nativamente e que foram implementados aqui:
 1. **Elasticidade** — um autoscaler que provisiona/remove réplicas sob demanda.
 2. **Medição de custo** — contabilização de *réplica-segundos* (a "conta" da nuvem).
 
-## Arquitetura
+## Arquitetura (em revisão, será alterada)
 
 ```
                         c1 (controlador Ryu / SDN)
@@ -96,28 +96,30 @@ Selecionáveis em `edos_config.py` via `ATTACK_MODE`:
 ## Como executar
 
 ```bash
+cd lst2.0
 cd demonstration
-sudo python3 edos.py
+sudo python3 edos_gui.py
 ```
 
 Na primeira vez, a instanciação demora mais porque as imagens são baixadas do Docker
 Hub. Para encerrar, pressione **CTRL+C uma vez** — o experimento derruba todos os
 containers, gera o relatório de fluxos e imprime o resumo de custo.
 
-Após o run, para o gráfico da linha do tempo e as métricas derivadas:
+Após o run, para gerar o gráfico da linha do tempo e as métricas derivadas:
 
 ```bash
 python3 plot_edos.py       # flows/edos_plot.png (réplicas, conexões, custo)
 python3 edos_metrics.py    # flows/edos_metrics.json (NCO / EAF / W_yoyo + QoS)
 ```
 
-### Calibrar os limiares do autoscaler (ground truth)
+### Calibrar os limiares do autoscaler
 
 Os limiares `SCALE_UP_CONN`/`SCALE_DOWN_CONN` devem vir da **capacidade medida** de uma
-réplica, não de um chute. O benchmark sobe uma topologia mínima (1 réplica + 1 cliente),
+réplica, de acordo com a máquina que o experimento será executado. O benchmark sobe uma topologia mínima (1 réplica + 1 cliente),
 lê o teto configurado do Apache (`MaxRequestWorkers`) e varre níveis de concorrência para
 achar o **ponto de saturação** (maior concorrência ainda dentro do SLO de sucesso + p95):
 
+É possível rodar o benchmark diretamente da interface gráfica ou via CLI. 
 ```bash
 sudo python3 edos_benchmark.py   # escreve flows/benchmark.json e imprime os limiares sugeridos
 ```
@@ -137,7 +139,7 @@ Ele recomenda `SCALE_UP_CONN = ponto de saturação × SCALE_TARGET_UTIL` (padr�
 | `WARMUP_SECONDS` | Tempo que uma réplica nova fica **cobrada mas fora do pool** (janela que o yo-yo explora) |
 | `DRAIN_TIMEOUT_SECONDS` | Janela de *connection draining* no scale-down antes de remover a réplica |
 | `PRICING_PROFILES` / `PRICING_CLOUD` / `PRICING` | Perfis de custo por nuvem (**AWS / Azure / GCP**) + nuvem ativa. Na GUI, um dropdown carrega o padrão da nuvem escolhida e ainda permite editar cada valor. Cada número é citado em `sources`. GCP não tem unidade por conexão (LCU=0; custo de LB via dados/banda); Azure cobra VM por segundo sem mínimo de 60s |
-| `COST_PER_REPLICA_SEC` | *(legado)* constante antiga mantida só para referência; o custo real vem de `PRICING` |
+| `COST_PER_REPLICA_SEC` | *(legado)(vai ser removido)* constante antiga mantida só para referência; o custo real vem de `PRICING`  |
 | `ATTACK_MODE` | `sustained` ou `yoyo` |
 | `SLOW_TEST` | `slowloris` / `slowpost` / `slowread` |
 | `SLOW_CONNS` / `SLOW_RATE` / `SLOW_INTERVAL` | Força do slowhttptest (`-c` / `-r` / `-i`) |
@@ -148,7 +150,7 @@ Ele recomenda `SCALE_UP_CONN = ponto de saturação × SCALE_TARGET_UTIL` (padr�
 | `PCAP_ROTATE_SECONDS` | Intervalo de rotação do pcap (maior ⇒ corta menos conexões slow) |
 | `HEALTHCHECK_RETRIES` / `HEALTHCHECK_INTERVAL` | Tentativas/espera do health-check do VIP antes de medir |
 
-Sugestão (yo-yo que de fato oscila com warmup/drain de 30s): `MIN=1, MAX=3, TICK=5s,
+Sugestão de configuração padrão: (yo-yo que de fato oscila com warmup/drain de 30s): `MIN=1, MAX=3, TICK=5s,
 WARMUP=30s, DRAIN=30s, PULSE_ON=60s, PULSE_OFF=60s, EXPERIMENT_DURATION=360s` (3 ciclos),
 `SLOW_CONNS≈200`. Calibre `SCALE_UP_CONN`/`SCALE_DOWN_CONN` com `edos_benchmark.py`
 (a capacidade real da réplica, não um chute).
@@ -166,8 +168,8 @@ WARMUP=30s, DRAIN=30s, PULSE_ON=60s, PULSE_OFF=60s, EXPERIMENT_DURATION=360s` (3
 - **`flows/final_report.csv`** — estatísticas de fluxo geradas pelo
   [CICFlowMeter](https://www.unb.ca/cic/research/applications.html), já
   **deduplicadas** (só a borda cliente↔LB; o hop interno LB↔réplica é descartado)
-  e **rotuladas** na coluna `Label` por faixa de IP (`attack` p/ `.71–.79`,
-  `benign` p/ `.51–.59`). O rótulo checa **os dois extremos** do fluxo, então uma
+  e **rotuladas** na coluna `Label` por faixa de IP (`attack` p/ `.103–.254`,
+  `benign` p/ `.51–.99`). O rótulo checa **os dois extremos** do fluxo, então uma
   conexão slow cortada pela rotação do pcap (direção invertida pelo CICFlowMeter)
   ainda é rotulada corretamente. Ver [`edos_labeling.py`](edos_labeling.py).
 - **`flows/run_manifest.json`** — manifesto do run (git SHA, timestamp, semente,
