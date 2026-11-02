@@ -269,12 +269,39 @@ def convertPcap():
     subprocess.run('rm -f flows/dump*', shell=True)
     with open(hostPath + '/final_report.csv', 'w') as f:
         f.write(canonical_header + '\n' + '\n'.join(all_rows) + '\n')
+    checkCaptureCoverage(canonical_header, all_rows)
     printTerm(
         f"[LST2.0][EDoS] Dataset: {totals['kept']} flows kept "
         f"(attack={totals['attack']} benign={totals['benign']} "
         f"unknown={totals['unknown']}), "
         f"{totals['dropped_internal']} internal-hop flows dropped (dedup), "
         f"{totals['malformed']} malformed")
+
+
+def checkCaptureCoverage(header, rows, min_fraction=0.95):
+    # Sanity check: the flows must span (almost) the whole run. A capture that
+    # dies mid-run (e.g. tshark losing one of its sniffed interfaces) used to
+    # go unnoticed and silently truncate the dataset.
+    from datetime import datetime
+    duration = getattr(cfg, 'EXPERIMENT_DURATION', 0)
+    try:
+        idx = [c.strip() for c in header.split(',')].index('Timestamp')
+        ts = []
+        for row in rows:
+            try:
+                ts.append(datetime.strptime(row.split(',')[idx].strip(),
+                                            '%d/%m/%Y %I:%M:%S %p'))
+            except (ValueError, IndexError):
+                pass
+        span = (max(ts) - min(ts)).total_seconds() if ts else 0
+    except ValueError:
+        printTerm("[LST2.0][EDoS] WARNING: could not check capture coverage")
+        return
+    if duration > 0 and span < min_fraction * duration:
+        printTerm(f"[LST2.0][EDoS] WARNING: CAPTURE TRUNCATED -- flows span only "
+                  f"{span:.0f}s of a {duration}s run. Do NOT use this run.")
+    else:
+        printTerm(f"[LST2.0][EDoS] Capture coverage OK: flows span {span:.0f}s")
 
 
 def signal_handler(sig, frame):

@@ -113,12 +113,23 @@ class Autoscaler(threading.Thread):
         self._sync_backends()
 
     def _decommission(self):
-        # Drain the NEWEST active replica (LIFO: the one most likely just added
-        # by a transient spike). Guard against dropping below MIN is in _decide.
+        # Pick which replica to give up (guard against dropping below MIN is in
+        # _decide):
+        #  1) a replica still WARMING is cancelled first (newest one): it serves
+        #     nothing yet but has been billed -- exactly the EDoS waste;
+        #  2) otherwise the NEWEST active one (LIFO), but NEVER the last active.
+        # Bug fixed (2026-11-02): before, a replica still warming did not count
+        # as active, so with 1 active + N warming the ONLY serving replica (w1)
+        # was drained -> the pool went empty (outage) and tshark, which sniffs a
+        # fixed interface list including w1's, died with it (truncated captures).
+        warming = [r for r in self._replicas if r.state == WARMING]
         actives = [r for r in self._replicas if r.state == ACTIVE]
-        if not actives:
+        if warming:
+            r = warming[-1]
+        elif len(actives) > 1:
+            r = actives[-1]
+        else:
             return
-        r = actives[-1]
         r.state = DRAINING
         r.state_since = time.time()
         self._log(f"[autoscaler] SCALE DOWN -> w{r.index} draining "
