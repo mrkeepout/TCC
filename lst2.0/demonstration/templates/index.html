@@ -103,6 +103,12 @@
                 <p class="text-xs text-slate2-500">{{ viewSubtitle }}</p>
             </div>
             <div class="flex items-center gap-3">
+                <span v-if="isRunning && runKind!=='benchmark' && countdown.active"
+                      class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold border tabular-nums"
+                      :class="countdown.unlimited ? 'bg-white text-slate2-700 border-cloud-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'">
+                    <span>⏳</span>{{ countdownText }}
+                    <span class="text-[11px] font-normal opacity-70">{{ countdown.unlimited ? 'decorrido' : 'restante' }}</span>
+                </span>
                 <span class="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold border"
                       :class="isRunning ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate2-500 border-cloud-200'">
                     <span class="relative flex h-2.5 w-2.5">
@@ -280,6 +286,31 @@
                                 📊 Monitor em tempo real
                                 <span class="text-[11px] font-normal text-slate2-500 ml-auto">{{ runKind==='benchmark' ? 'benchmark' : 'experimento' }}</span>
                             </h2>
+
+                            <!-- Live readouts + countdown (experimento). Conexões/réplicas vêm do
+                                 último tick do autoscaler; o cronômetro é ancorado no log "Running for Ns"
+                                 do edos.py (quando o relógio real da duração começa). -->
+                            <div v-if="runKind!=='benchmark' && (isRunning || hasLive)" class="grid grid-cols-3 gap-2 mb-3">
+                                <div class="rounded-lg bg-cloud-50 border border-cloud-200 px-3 py-2">
+                                    <div class="text-[10px] uppercase tracking-wide text-slate2-500">Conexões agora</div>
+                                    <div class="text-2xl font-bold tabular-nums leading-tight" style="color:#2a78d6">{{ liveConns }}</div>
+                                </div>
+                                <div class="rounded-lg bg-cloud-50 border border-cloud-200 px-3 py-2">
+                                    <div class="text-[10px] uppercase tracking-wide text-slate2-500">Réplicas agora</div>
+                                    <div class="text-2xl font-bold tabular-nums leading-tight" style="color:#eb6834">{{ liveReplicas }}</div>
+                                </div>
+                                <div class="rounded-lg px-3 py-2 border"
+                                     :class="countdown.active && !countdown.unlimited ? 'bg-emerald-50 border-emerald-200' : 'bg-cloud-50 border-cloud-200'">
+                                    <div class="text-[10px] uppercase tracking-wide text-slate2-500">{{ countdown.unlimited ? 'Tempo decorrido' : 'Tempo restante' }}</div>
+                                    <div class="text-2xl font-bold tabular-nums leading-tight"
+                                         :class="countdown.active && !countdown.unlimited ? 'text-emerald-700' : 'text-ink-900'">{{ countdownText }}</div>
+                                </div>
+                            </div>
+                            <div v-if="runKind!=='benchmark' && countdown.active && !countdown.unlimited && countdown.total>0"
+                                 class="h-1.5 rounded-full bg-cloud-200 overflow-hidden mb-3">
+                                <div class="h-full bg-emerald-500 transition-all duration-500 ease-linear" :style="{ width: countdownPct + '%' }"></div>
+                            </div>
+
                             <div v-show="hasLive" ref="chartLive" style="width:100%;height:230px"></div>
                             <div v-if="!hasLive" class="flex items-center justify-center text-center text-xs text-slate2-400" style="height:230px">
                                 Os gráficos se desenham conforme o autoscaler/benchmark reporta no log.
@@ -526,17 +557,60 @@
 
             // --- Real-time monitor: series parsed live from the log stream ----
             const live = reactive({ t: [], replicas: [], conns: [], cost: [],
-                                    bconc: [], bp95: [], bsucc: [], lastConc: null });
+                                    bconc: [], bp95: [], bsucc: [], lastConc: null, t0: null });
             const hasLive = computed(() => live.t.length > 0 || live.bconc.length > 0);
+            const liveConns = computed(() => live.conns.length ? live.conns[live.conns.length - 1] : 0);
+            const liveReplicas = computed(() => live.replicas.length ? live.replicas[live.replicas.length - 1] : 0);
             const resetLive = () => {
                 live.t = []; live.replicas = []; live.conns = []; live.cost = [];
-                live.bconc = []; live.bp95 = []; live.bsucc = []; live.lastConc = null;
+                live.bconc = []; live.bp95 = []; live.bsucc = []; live.lastConc = null; live.t0 = null;
+                stopCountdown();
+            };
+
+            // --- Countdown: anchored on edos.py's "Running for Ns" log line, which
+            // is printed exactly when the experiment's real duration clock (signal.alarm)
+            // starts -- so the timer reflects actual time left, not time since the click.
+            // Unlimited runs (EXPERIMENT_DURATION=0) print "Running. Press CTRL+C..." and
+            // we count elapsed up instead.
+            const countdown = reactive({ active: false, unlimited: false, total: 0, remaining: 0, elapsed: 0, startedAt: 0 });
+            let countdownTimer = null;
+            const fmtClock = (s) => {
+                s = Math.max(0, Math.floor(s));
+                const m = Math.floor(s / 60), r = s % 60;
+                return `${m}:${String(r).padStart(2, '0')}`;
+            };
+            const countdownText = computed(() => {
+                if (!countdown.active) return '—';
+                return countdown.unlimited ? fmtClock(countdown.elapsed) : fmtClock(countdown.remaining);
+            });
+            const countdownPct = computed(() =>
+                countdown.total > 0 ? Math.max(0, Math.min(100, countdown.remaining / countdown.total * 100)) : 0);
+            const startCountdown = (total, unlimited) => {
+                stopCountdown();
+                countdown.active = true; countdown.unlimited = unlimited;
+                countdown.total = total; countdown.startedAt = Date.now();
+                countdown.remaining = total; countdown.elapsed = 0;
+                countdownTimer = setInterval(() => {
+                    const el = (Date.now() - countdown.startedAt) / 1000;
+                    countdown.elapsed = el;
+                    countdown.remaining = Math.max(0, total - el);
+                    // Stop ticking at zero but keep showing 0:00 until teardown finishes (the done event).
+                    if (!unlimited && countdown.remaining <= 0 && countdownTimer) {
+                        clearInterval(countdownTimer); countdownTimer = null;
+                    }
+                }, 500);
+            };
+            const stopCountdown = () => {
+                if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+                countdown.active = false;
             };
             const parseLogLine = (line) => {
                 // Autoscaler tick: billed=N (wW/aA/dD) conns=C new/s=R cost=X
                 let m = line.match(/billed=(\d+) \(w(\d+)\/a(\d+)\/d(\d+)\) conns=(\d+) new\/s=([\d.]+) cost=([\d.]+)/);
                 if (m) {
-                    live.t.push(live.t.length);
+                    // Wall-clock seconds since the first tick -> a literal "conexões ao longo do tempo".
+                    if (live.t0 == null) live.t0 = Date.now();
+                    live.t.push((Date.now() - live.t0) / 1000);
                     live.replicas.push(+m[1]); live.conns.push(+m[5]); live.cost.push(+m[7]);
                     return true;
                 }
@@ -570,7 +644,7 @@
                         { x: live.t, y: live.replicas, name: 'réplicas', mode: 'lines', line: { shape: 'hv', color: '#eb6834', width: 2 } },
                         { x: live.t, y: live.conns, name: 'conexões', mode: 'lines', line: { color: '#2a78d6', width: 1.5 } },
                         { x: live.t, y: live.cost, name: 'custo', yaxis: 'y2', mode: 'lines', line: { color: '#12a594', width: 2 } },
-                    ], { ...L, xaxis: { title: 'tick' }, yaxis: { title: 'rép / conn', rangemode: 'tozero' },
+                    ], { ...L, xaxis: { title: 'tempo (s)', rangemode: 'tozero' }, yaxis: { title: 'rép / conn', rangemode: 'tozero' },
                          yaxis2: { overlaying: 'y', side: 'right', title: 'custo', rangemode: 'tozero' } },
                        { responsive: true, displayModeBar: false });
                 }
@@ -672,12 +746,16 @@
                     const d = JSON.parse(e.data);
                     if (d.line) {
                         logs.value.push(d.line);
+                        // Arm the countdown the moment edos.py starts its real duration clock.
+                        const mDur = d.line.match(/Running for (\d+)s/);
+                        if (mDur) startCountdown(+mDur[1], false);
+                        else if (/Running\. Press CTRL\+C to finish/.test(d.line)) startCountdown(0, true);
                         if (parseLogLine(d.line)) nextTick(renderLive);
                         nextTick(scrollLog);
                     }
                 };
                 eventSource.addEventListener('done', async () => {
-                    eventSource.close(); status.value = 'idle';
+                    eventSource.close(); status.value = 'idle'; stopCountdown();
                     if (runKind.value === 'benchmark') {
                         toast('Benchmark concluído', 'success');
                         await fetchBenchmark();
@@ -856,7 +934,8 @@
                 PROFILES, fleetTotal, addFleetRow, removeFleetRow,
                 cloudProfiles, selectedCloud, CLOUD_LABELS, cloudKeys, applyCloud,
                 runKind, benchmarkResult, runBenchmark, applyBenchmark,
-                chartLive, hasLive, live, yoyoWarning
+                chartLive, hasLive, live, yoyoWarning,
+                liveConns, liveReplicas, countdown, countdownText, countdownPct
             };
         }
     });
