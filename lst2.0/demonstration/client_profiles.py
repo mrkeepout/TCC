@@ -92,6 +92,7 @@ class ClientProfile(ABC):
         # are reproducible yet not identical (Phase 0.3 reproducibility).
         self._rng = random.Random(config.seed * 1000 + config.client_id)
         self._conn: http.client.HTTPConnection | None = None
+        self._conn_used = 0   # requests already served on the current connection
         self._ok = 0
         self._fail = 0
         self._last_err = ''
@@ -106,7 +107,7 @@ class ClientProfile(ABC):
                 self._qos = open(config.qos_csv, 'w', buffering=1)
                 self._qos.write(
                     'timestamp,profile,client_id,method,path,body_size,'
-                    'latency_ms,status,ok\n')
+                    'latency_ms,status,ok,retry\n')
             except OSError:
                 self._qos = None
 
@@ -175,42 +176,61 @@ class ClientProfile(ABC):
             self._conn = http.client.HTTPConnection(
                 self._config.target_vip, self._config.target_port,
                 timeout=self._config.connect_timeout)
+            self._conn_used = 0
         return self._conn
 
     def _perform(self, req: Request) -> None:
-        """Issue one request over the Keep-Alive connection. A failure (a
-        saturated backend under attack) is counted, not swallowed, and the
-        connection is reset so the next request reconnects."""
-        t0 = time.time()
-        status = ''
-        ok = 0
-        try:
-            conn = self._connection()
-            body = b'x' * req.body_size if req.body_size > 0 else None
-            headers = {'Connection': 'keep-alive'}
-            if body is not None:
-                headers['Content-Type'] = 'application/octet-stream'
-            conn.request(req.method, req.path, body=body, headers=headers)
-            resp = conn.getresponse()
-            resp.read()  # drain so the connection can be reused
-            status = str(resp.status)
-            ok = 1
-            self._ok += 1
-        except Exception as ex:
-            self._fail += 1
-            self._last_err = f"{type(ex).__name__}: {ex}"
-            status = type(ex).__name__
-            self._close()  # force a fresh connection next time
-        self._qos_record(req, (time.time() - t0) * 1000.0, status, ok)
+        """Issue one request over the Keep-Alive connection.
 
-    def _qos_record(self, req: Request, latency_ms: float, status: str, ok: int) -> None:
+        Stale Keep-Alive (fixed 2026-11-02): if the request fails on a REUSED
+        connection, the server most likely closed it while the client was idle
+        (think-time > server keep-alive timeout). That is not a service failure
+        -- a browser silently reopens and retries -- so we retry ONCE on a fresh
+        connection and log the final outcome with retry=1. If the retry also
+        fails, it is a real failure (e.g. a saturated backend under attack).
+
+        ok=1 only for HTTP 2xx/3xx (before: any HTTP response, even 404/5xx,
+        counted as success, which would hide an overloaded LB returning 503)."""
+        t0 = time.time()
+        status, ok, retried = '', 0, 0
+        for attempt in (0, 1):
+            reused = self._conn is not None and self._conn_used > 0
+            try:
+                conn = self._connection()
+                body = b'x' * req.body_size if req.body_size > 0 else None
+                headers = {'Connection': 'keep-alive'}
+                if body is not None:
+                    headers['Content-Type'] = 'application/octet-stream'
+                conn.request(req.method, req.path, body=body, headers=headers)
+                resp = conn.getresponse()
+                resp.read()  # drain so the connection can be reused
+                self._conn_used += 1
+                status = str(resp.status)
+                ok = 1 if 200 <= resp.status < 400 else 0
+                break
+            except Exception as ex:
+                status = type(ex).__name__
+                self._last_err = f"{type(ex).__name__}: {ex}"
+                self._close()  # force a fresh connection next time
+                if attempt == 0 and reused:
+                    retried = 1
+                    continue   # stale Keep-Alive: retry once on a new connection
+                break
+        if ok:
+            self._ok += 1
+        else:
+            self._fail += 1
+        self._qos_record(req, (time.time() - t0) * 1000.0, status, ok, retried)
+
+    def _qos_record(self, req: Request, latency_ms: float, status: str, ok: int,
+                    retried: int = 0) -> None:
         if self._qos is None:
             return
         try:
             self._qos.write(
                 f"{time.time():.3f},{self.name},{self._config.client_id},"
                 f"{req.method},{req.path},{req.body_size},"
-                f"{latency_ms:.1f},{status},{ok}\n")
+                f"{latency_ms:.1f},{status},{ok},{retried}\n")
         except (OSError, ValueError):
             pass
 
@@ -273,7 +293,9 @@ class Browsing(ClientProfile):
             reqs.append(Request('GET', f'/?obj={size}',
                                 think_after=self._rng.uniform(0.05, 0.4)))
         if self._rng.random() < 0.20:       # ~20% of pages submit a form
-            reqs.append(Request('POST', '/submit', body_size=self._rng.randint(256, 2048)))
+            # '/submit' does not exist on the web image (404 in every run);
+            # POST to the root with a query, like the mail/print profiles do.
+            reqs.append(Request('POST', '/?form=submit', body_size=self._rng.randint(256, 2048)))
         return reqs
 
     def idle_after_session(self) -> float:
