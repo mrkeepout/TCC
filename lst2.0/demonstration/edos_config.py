@@ -94,6 +94,11 @@ COOLDOWN_SECONDS = 10   # minimum time between two scaling actions
 # replica, so a single transient dip in the load signal can't tear down capacity
 # in the middle of a sustained attack (which caused up/down flapping).
 SCALE_DOWN_TICKS = 3
+# Scale-up counts the replicas still WARMING as capacity already on the way, so a
+# single overload does not order a new replica every cooldown while the previous
+# one warms up (overshoot to MAX_REPLICAS). False = old naive behaviour, kept only
+# for comparison experiments (it amplifies EDoS cost).
+AUTOSCALER_COUNT_WARMING = True
 COST_PER_REPLICA_SEC = 0.0001  # legacy constant, kept for reference only; the
 #                                real cost now comes from PRICING below.
 

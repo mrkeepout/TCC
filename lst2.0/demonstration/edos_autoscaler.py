@@ -250,7 +250,20 @@ class Autoscaler(threading.Thread):
         if time.time() - self._last_action < cfg.COOLDOWN_SECONDS:
             return
         low_ticks = getattr(cfg, 'SCALE_DOWN_TICKS', 3)
-        if per_replica > cfg.SCALE_UP_CONN and provisionable < cfg.MAX_REPLICAS:
+        # Scale-up decision (fixed 2026-11-03): divide the load by the capacity
+        # ALREADY REQUESTED (active + warming), not only by the active replicas.
+        # Before, a replica still warming did not count, and since COOLDOWN (10s)
+        # < WARMUP (30s) the autoscaler saw the same overload every cooldown and
+        # kept ordering replicas up to MAX (e.g. 42 conns -> 4 replicas when 2
+        # suffice). Real autoscalers (AWS target tracking with instance warmup,
+        # Kubernetes HPA) decide on requested capacity for this reason.
+        # AUTOSCALER_COUNT_WARMING=False restores the old (naive) behaviour, kept
+        # only to compare how much a naive autoscaler amplifies EDoS cost.
+        if getattr(cfg, 'AUTOSCALER_COUNT_WARMING', True):
+            up_load = conns / max(provisionable, 1)
+        else:
+            up_load = per_replica
+        if up_load > cfg.SCALE_UP_CONN and provisionable < cfg.MAX_REPLICAS:
             self._provision()
             self._last_action = time.time()
             self._low_streak = 0
