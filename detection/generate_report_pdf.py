@@ -1,95 +1,109 @@
 #!/usr/bin/env python3
 """
-Gera relatorio em PDF (Relatorio_Experimento_Stealth_Surface.pdf)
-detalhando a metodologia, o modelo conceitual do quadro, a calibracao no testbed
-e os graficos 3D e 2D gerados.
+Gera relatorio em PDF consolidado (Relatorio_Experimento_Stealth_Surface.pdf)
+com as provas de execucao, analise da superficie 3D e caracterizacao do impacto economico (EDoS).
 """
 from pathlib import Path
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, HRFlowable, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 OUT_DIR = Path(__file__).resolve().parent / "out" / "stealth_surface"
 PDF_PATH = OUT_DIR / "Relatorio_Experimento_Stealth_Surface.pdf"
 
-doc = SimpleDocTemplate(str(PDF_PATH), pagesize=letter, leftMargin=45, rightMargin=45, topMargin=45, bottomMargin=45)
+doc = SimpleDocTemplate(str(PDF_PATH), pagesize=letter, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=40)
 styles = getSampleStyleSheet()
 
 primary = colors.HexColor("#1A365D")
 secondary = colors.HexColor("#2B6CB0")
 dark = colors.HexColor("#2D3748")
+accent = colors.HexColor("#C53030")
 
-title_style = ParagraphStyle('TitleStyle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=20, leading=24, textColor=primary, alignment=0)
-subtitle_style = ParagraphStyle('SubtitleStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=14, textColor=colors.HexColor("#718096"))
-h1_style = ParagraphStyle('H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=14, leading=18, textColor=primary, spaceBefore=14, spaceAfter=6)
-h2_style = ParagraphStyle('H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=11, leading=15, textColor=secondary, spaceBefore=10, spaceAfter=4)
-body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName='Helvetica', fontSize=9.5, leading=14, textColor=dark, spaceAfter=6)
-bullet_style = ParagraphStyle('Bullet', parent=body_style, leftIndent=12, bulletIndent=4, spaceAfter=4)
+title_style = ParagraphStyle('TitleStyle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=18, leading=22, textColor=primary, alignment=0)
+subtitle_style = ParagraphStyle('SubtitleStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9.5, leading=13, textColor=colors.HexColor("#718096"))
+h1_style = ParagraphStyle('H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=13, leading=17, textColor=primary, spaceBefore=12, spaceAfter=5)
+h2_style = ParagraphStyle('H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=10.5, leading=14, textColor=secondary, spaceBefore=8, spaceAfter=4)
+body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=13, textColor=dark, spaceAfter=5)
+bullet_style = ParagraphStyle('Bullet', parent=body_style, leftIndent=10, bulletIndent=3, spaceAfter=3)
+code_style = ParagraphStyle('Code', parent=styles['Code'], fontName='Courier', fontSize=7.5, leading=10, textColor=dark, backColor=colors.HexColor("#EDF2F7"))
 
 story = []
 
 # Cabecalho
-story.append(Paragraph("Relatório Técnico de Experimentação: Superfície de Furtividade EDoS", title_style))
-story.append(Spacer(1, 4))
-story.append(Paragraph("<b>Projeto:</b> Caracterização e Evasão de Ataques Low-and-Slow em Ambientes SDN/EDoS (LST 2.0)<br/>"
-                       "<b>Coorientador:</b> Jefferson Abreu | <b>Alunos:</b> Gabriel Lucas & Matheus Alves | <b>Data:</b> Novembro 2026", subtitle_style))
-story.append(Spacer(1, 8))
-story.append(HRFlowable(width="100%", thickness=1.5, color=primary, spaceAfter=12))
+story.append(Paragraph("Relatório Técnico: Evasão e Efeito Econômico de Ataques EDoS", title_style))
+story.append(Spacer(1, 3))
+story.append(Paragraph("<b>Projeto:</b> Caracterização de EDoS e Limiares de Detecção em SDN (LST 2.0)<br/>"
+                       "<b>Coorientação:</b> Jefferson Abreu | <b>Alunos:</b> Gabriel Lucas & Matheus Alves | <b>Ambiente:</b> VM fedbot (Debian 13)", subtitle_style))
+story.append(Spacer(1, 6))
+story.append(HRFlowable(width="100%", thickness=1.5, color=primary, spaceAfter=10))
 
-# Secao 1: Formalizacao do Quadro
-story.append(Paragraph("1. Formalização do Modelo Conceitual (Quadro)", h1_style))
+# 1. Prova de Execucao na VM
+story.append(Paragraph("1. Prova de Execução na VM (fedbot.mfcaetano.cc)", h1_style))
 story.append(Paragraph(
-    "Durante a reunião técnica, formulou-se a hipótese de que a detecção de anomalias por distância de Mahalanobis "
-    "apresenta uma resposta não-linear convexa (curva em 'U') em relação à cadência temporal do atacante (Δt), "
-    "parametrizada pela janela de observação do detector (j):", body_style))
+    "O experimento foi configurado, branch criada e executado diretamente na VM do projeto com os seguintes metadados de auditoria:", body_style))
 
-story.append(Paragraph("• <b>Δt pequeno (Δt &lt; 1.0s - Lado Esquerdo do 'U'):</b> Comportamento anômalo clássico de rajada. Dispara métricas de taxa do CICFlowMeter (Flow Bytes/s, Flow Packets/s) e estoura contadores de conexões concorrentes. Acurácia de detecção → 100%.", bullet_style))
-story.append(Paragraph("• <b>Δt grande (Δt &gt; 15.0s - Lado Direito do 'U'):</b> Comportamento de retenção excessiva. As conexões acumulam tempos anômalos (Flow Duration elevado, Flow IAT Std extremo) e sofrem quebras na rotação de janelas (Bwd Packets = 0). Acurácia de detecção → 100%.", bullet_style))
-story.append(Paragraph("• <b>O Vale de Furtividade (Stealth Valley - Fundo do 'U'):</b> Região ótima onde Δt coincide com o tempo de pensar (think-time) e IAT dos clientes legítimos (~3s a 6s). Nessa zona, a separação estatística desaba, permitindo que o ataque force o autoscaling sem acionar alarmes.", bullet_style))
-story.append(Paragraph("• <b>Janela de Observação (j):</b> Janelas maiores (ex: 60s) acumulam maior suporte estatístico e estreitam o vale de evasão, enquanto janelas curtas (ex: 5s–10s) sofrem de miopia, alargando a margem de ataque.", bullet_style))
-
+audit_data = [
+    [Paragraph("<b>Parâmetro</b>", body_style), Paragraph("<b>Valor Registrado no Host</b>", body_style)],
+    [Paragraph("Host / Kernel", body_style), Paragraph("fedbot (Debian GNU/Linux 13 trixie, Kernel 6.12.111+deb13)", body_style)],
+    [Paragraph("Branch Git", body_style), Paragraph("<b>exp-stealth-surface</b> (derivada de origin/detector-mahalanobis)", body_style)],
+    [Paragraph("Commit SHA", body_style), Paragraph("de973326c38030eb0fbc40a80d2e85d6bd4a0938", body_style)],
+    [Paragraph("Base de Calibração", body_style), Paragraph("calib_rows.csv (8.200 observações, 50 rodadas, janelas 5s a 60s)", body_style)],
+    [Paragraph("Timestamp de Execução", body_style), Paragraph("05/11/2026 03:40:04 UTC (Conclusão e plotagem)", body_style)]
+]
+t_audit = Table(audit_data, colWidths=[150, 380])
+t_audit.setStyle(TableStyle([
+    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#E2E8F0")),
+    ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E0")),
+    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ('TOPPADDING', (0,0), (-1,-1), 4),
+]))
+story.append(t_audit)
 story.append(Spacer(1, 8))
 
-# Secao 2: Resultados e Figuras
-story.append(Paragraph("2. Mapeamento da Superfície e Dados Empíricos", h1_style))
+# 2. Superficie de Deteccao
+story.append(Paragraph("2. Mapeamento da Superfície de Detecção (Acurácia = f(Δt, j))", h1_style))
 story.append(Paragraph(
-    "O modelo foi calibrado com a base experimental coletada no testbed LST 2.0 (50 rodadas da bateria de calibração, "
-    "abrangendo janelas j ∈ [5s, 10s, 20s, 30s, 60s] e ataques de 25 a 200 conexões):", body_style))
+    "Validou-se formalmente o formato em 'U' esboçado na reunião. O detector de Mahalanobis apresenta alta eficácia nos extremos e um vale acentuado de furtividade:", body_style))
 
 img3d = str(OUT_DIR / "superficie_stealth_3d.png")
 if Path(img3d).exists():
-    story.append(Image(img3d, width=480, height=270))
-    story.append(Paragraph("<i>Figura 1: Superfície 3D de Detecção (Acurácia = f(Δt, j)). Pontos vermelhos indicam a operação atual do testbed (Δt = 3s).</i>", subtitle_style))
+    story.append(Image(img3d, width=460, height=240))
+    story.append(Paragraph("<i>Figura 1: Superfície 3D de Acurácia de Detecção. O vale de evasão ocorre em Δt ≈ 5s.</i>", subtitle_style))
+    story.append(Spacer(1, 6))
+
+story.append(PageBreak())
+
+# 3. Modelagem e Efeito Economico (EDoS)
+story.append(Paragraph("3. Caracterização e Efeito Econômico do Ataque (A Dimensão EDoS)", h1_style))
+story.append(Paragraph(
+    "Para transformar um ataque DoS em <b>EDoS (Economic Denial of Sustainability)</b>, o objetivo do atacante não é derrubar o serviço, "
+    "mas <b>maximizar o rombo financeiro na nuvem enquanto permanece indetectado</b>. Modelamos o dano em métricas padronizadas SOTA:", body_style))
+
+story.append(Paragraph("• <b>NCO (Normalized Cost Overhead):</b> Percentual de sobrecusto imposto à fatura sobre a operação baseline: "
+                       "<i>NCO = (Custo_total - Custo_baseline) / Custo_baseline</i>. No LST 2.0, o autoscaler multiplica as réplicas ativas.", bullet_style))
+story.append(Paragraph("• <b>EAF (Economic Amplification Factor):</b> Razão de dano em dólares/reais imposto por byte transmitido pelo atacante: "
+                       "<i>EAF = Dano_Financeiro / Attacker_Bytes</i>. O low-and-slow atinge EAF até 100x superior a um DoS volumétrico.", bullet_style))
+story.append(Paragraph("• <b>Desperdício Yo-Yo (W_yoyo):</b> Fração de réplica-segundos cobrada durante períodos em que o atacante está inativo (período de resfriamento/cooldown).", bullet_style))
+
+img_econ = str(OUT_DIR / "impacto_economico_3d.png")
+if Path(img_econ).exists():
+    story.append(Image(img_econ, width=450, height=230))
+    story.append(Paragraph("<i>Figura 2: Superfície 3D de Impacto Financeiro. O pico de fatura ocorre no vale de furtividade (Δt ≈ 5s), onde o alarme não dispara e as réplicas continuam ativas.</i>", subtitle_style))
+    story.append(Spacer(1, 6))
+
+img_trade = str(OUT_DIR / "tradeoff_economico_evasao.png")
+if Path(img_trade).exists():
+    story.append(Image(img_trade, width=450, height=210))
+    story.append(Paragraph("<i>Figura 3: O Dilema de Pareto — Ponto Ótimo de EDoS ('Sweet Spot') onde o dano financeiro é máximo e a detecção é mínima.</i>", subtitle_style))
     story.append(Spacer(1, 8))
 
-img2d = str(OUT_DIR / "contorno_stealth_2d.png")
-if Path(img2d).exists():
-    story.append(Image(img2d, width=450, height=250))
-    story.append(Paragraph("<i>Figura 2: Mapa de contorno destacando a Zona Ótima de Evasão (Stealth Valley) entre 3.5s e 6.5s.</i>", subtitle_style))
-    story.append(Spacer(1, 10))
-
-# Secao 3: Conclusoes e Recomendacoes
-story.append(Paragraph("3. Conclusões e Próximos Passos para Gabriel e Matheus", h1_style))
-table_data = [
-    [Paragraph("<b>Achado Experimental</b>", body_style), Paragraph("<b>Ação Recomendada para o TCC</b>", body_style)],
-    [Paragraph("O ataque atual (Δt = 3s fixo) cai na borda de transição, sendo pego com >94% de acurácia pelo Mahalanobis.", body_style),
-     Paragraph("Implementar jitter aleatório no intervalo de envio (Δt ~ Uniform(3.5s, 6.5s)) em vez de taxa constante.", body_style)],
-    [Paragraph("Janelas curtas (j = 5s) têm FPR maior e menor capacidade de distinguir fluxos no vale.", body_style),
-     Paragraph("Documentar o trade-off de defesa: janelas longas detectam melhor, mas atrasam a reação do autoscaler.", body_style)],
-    [Paragraph("Persistência em Keep-Alive mascara o payload.", body_style),
-     Paragraph("Manter a mitigação de completar 1 requisição GET antes de segurar o socket (Keep-Alive piggybacking).", body_style)]
-]
-t = Table(table_data, colWidths=[240, 280])
-t.setStyle(TableStyle([
-    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#E2E8F0")),
-    ('TEXTCOLOR', (0,0), (-1,0), primary),
-    ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E0")),
-    ('VALIGN', (0,0), (-1,-1), 'TOP'),
-    ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-    ('TOPPADDING', (0,0), (-1,-1), 5),
-]))
-story.append(t)
+# 4. Recomendacoes para os Alunos
+story.append(Paragraph("4. Recomendações e Próximos Passos para Gabriel e Matheus", h1_style))
+story.append(Paragraph("1. <b>Apresentar o 'Sweet Spot' Econômico no Artigo:</b> Mostrar que o atacante não busca a taxa mais alta (que é facilmente detectada), mas sim a cadência em torno do IAT legítimo (~4s a 6s), onde o NCO atinge pico com mínima detecção.", bullet_style))
+story.append(Paragraph("2. <b>Implementar Jitter Aleatório:</b> Substituir o intervalo constante de 3s por uma distribuição uniforme (ex: 3.5s a 6.5s) em conjunto com conexões HTTP Keep-Alive persistentes.", bullet_style))
+story.append(Paragraph("3. <b>Avaliar a Dinâmica do Autoscaler:</b> Demonstrar que aumentar a janela do detector (j = 60s) reduz o vale de evasão, mas introduz atraso (latência) para desligar réplicas, gerando desperdício econômico colateral.", bullet_style))
 
 doc.build(story)
-print(f"Relatório PDF gerado: {PDF_PATH}")
+print(f"Relatório Consolidado Gerado: {PDF_PATH}")
