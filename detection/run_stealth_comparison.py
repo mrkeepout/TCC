@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 """
-Experimento de Comparacao Rigorosa: Ataque Agressivo vs Ataque Furtivo
-1. Cenario A (Base Gabriel): 1 atacante, 200 conexoes (SLOW_CONNS=200, RATE=50).
-2. Cenario B (Furtivo Proposto): 1 atacante, 15 conexoes (SLOW_CONNS=15, RATE=2).
-3. Cenario C (Furtivo EDoS Distribuido): 4 atacantes, 15 conexoes cada (total 60 conns diluidas).
-
-Executa emulacoes reais no LST 2.0 (VM fedbot), extrai fluxos com CICFlowMeter,
-avalia a taxa de deteccao de Mahalanobis e mede o impacto de autoscaling (replicas e custo).
+Experimento de Comparacao Rigorosa: Baseline (0 atacantes) vs Gabriel vs Furtivo vs Distribuido
+Todos rodando com clientes Poisson e 10 arquivos de tamanhos variados no Apache.
 """
 import os
 import sys
@@ -23,6 +18,7 @@ OUT_BASE = Path(__file__).resolve().parent / "out" / "stealth_comparison"
 OUT_BASE.mkdir(parents=True, exist_ok=True)
 
 SCENARIOS = {
+    "cenario_baseline_0atk":    {"num_atk": 0, "conns": 0,   "rate": 0,  "interval": 3, "clients": 10},
     "cenario_gabriel_200conns": {"num_atk": 1, "conns": 200, "rate": 50, "interval": 3, "clients": 10},
     "cenario_furtivo_15conns":  {"num_atk": 1, "conns": 15,  "rate": 2,  "interval": 5, "clients": 10},
     "cenario_distribuido_4x15": {"num_atk": 4, "conns": 15,  "rate": 2,  "interval": 5, "clients": 10},
@@ -46,7 +42,7 @@ def set_config(scen):
         elif l.strip().startswith("EXPERIMENT_DURATION ="):
             lines.append(f"EXPERIMENT_DURATION = {DURATION}")
         elif l.strip().startswith("SCALE_UP_CONN ="):
-            lines.append("SCALE_UP_CONN = 35")  # Limiar calibrado para medir o gatilho elástico
+            lines.append("SCALE_UP_CONN = 35")
         else:
             lines.append(l)
     CFG_PATH.write_text("\n".join(lines) + "\n")
@@ -71,7 +67,6 @@ def run_scenario(name, scen):
     res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     print(f"[STEALTH-EXP] Concluido em {time.time()-t0:.1f}s. Return code: {res.returncode}")
     
-    # Salva os CSVs gerados
     flows_dir = BASE_DIR / "flows"
     for item in flows_dir.glob("*"):
         if item.is_file():
@@ -83,7 +78,7 @@ def run_scenario(name, scen):
     print(f"[STEALTH-EXP] Dados salvos em: {run_dir}")
 
 def main():
-    print("[STEALTH-EXP] Iniciando bateria comparativa no LST 2.0...")
+    print("[STEALTH-EXP] Iniciando bateria comparativa no LST 2.0 (com Baseline 0 atacantes)...")
     for name, scen in SCENARIOS.items():
         run_scenario(name, scen)
         time.sleep(5)
