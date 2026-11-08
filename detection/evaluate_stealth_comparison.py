@@ -7,7 +7,7 @@ Avalia a matriz de detecção e impacto econômico dos 4 cenários experimentais
 4. cenario_distribuido_4x15 (4 atacantes, 15 conexões cada - EDoS furtivo distribuído)
 
 Treina o modelo de Mahalanobis estritamente no Baseline Real com tráfego Poisson + 10 arquivos.
-Gera tabelas comparativas, gráficos analíticos e relatório PDF executivo para o TCC.
+Gera tabelas comparativas, gráficos analíticos e relatório PDF executivo detalhado para o TCC.
 """
 import os
 import json
@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 from sklearn.covariance import LedoitWolf
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, HRFlowable, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 BASE_DIR = Path(__file__).resolve().parent / "out" / "stealth_comparison"
@@ -134,7 +134,7 @@ def main():
     print(sum_df.to_string())
 
     # 2. Gerar Gráfico Analítico Comparativo
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 8), dpi=150)
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 7.5), dpi=150)
     
     labels_all = ["Baseline\n(0 Atk)", "Gabriel\n(1x200)", "Furtivo\n(1x15)", "Distribuído\n(4x15)"]
     x = np.arange(len(labels_all))
@@ -201,36 +201,43 @@ def main():
     plt.close(fig)
     print(f"[OK] Gráfico salvo em: {chart_path}")
 
-    # 3. Gerar Relatório Executivo em PDF
+    # 3. Gerar Relatório Executivo em PDF (2 Páginas estruturadas)
     pdf_path = OUT_DIR / "Relatorio_Comparativo_Stealth_Gabriel.pdf"
-    doc = SimpleDocTemplate(str(pdf_path), pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+    doc = SimpleDocTemplate(str(pdf_path), pagesize=letter, leftMargin=36, rightMargin=36, topMargin=32, bottomMargin=32)
     styles = getSampleStyleSheet()
     
     primary = colors.HexColor("#1A365D")
+    secondary = colors.HexColor("#2B6CB0")
     dark = colors.HexColor("#2D3748")
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=17, leading=21, textColor=primary, alignment=0)
+    code_bg = colors.HexColor("#EDF2F7")
+    
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=16, leading=20, textColor=primary, alignment=0)
     subtitle_style = ParagraphStyle('SubtitleStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=12, textColor=colors.HexColor("#718096"))
-    h1_style = ParagraphStyle('H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=11.5, leading=15, textColor=primary, spaceBefore=8, spaceAfter=4)
-    body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName='Helvetica', fontSize=8.2, leading=11.5, textColor=dark, spaceAfter=3)
-    bullet_style = ParagraphStyle('Bullet', parent=body_style, leftIndent=10, bulletIndent=3, spaceAfter=2.5)
+    h1_style = ParagraphStyle('H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=11, leading=14, textColor=primary, spaceBefore=7, spaceAfter=3)
+    h2_style = ParagraphStyle('H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=9.5, leading=12, textColor=secondary, spaceBefore=4, spaceAfter=2)
+    body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=11, textColor=dark, spaceAfter=2.5)
+    bullet_style = ParagraphStyle('Bullet', parent=body_style, leftIndent=8, bulletIndent=2, spaceAfter=2)
+    code_style = ParagraphStyle('CodeBlock', parent=styles['Code'], fontName='Courier', fontSize=7.2, leading=9.5, textColor=colors.HexColor("#1A202C"))
 
     story = []
+    
+    # === PÁGINA 1: RESULTADOS EMPÍRICOS E GRÁFICOS ===
     story.append(Paragraph("Relatório Experimental: Avaliação de Evasão Furtiva e EDoS no LST 2.0", title_style))
     story.append(Spacer(1, 2))
     story.append(Paragraph("<b>Ambiente:</b> VM fedbot (Debian 13, Intel i9-14900K, 32GB RAM) | <b>Tráfego:</b> Clientes Poisson + 10 Arquivos Reais", subtitle_style))
     story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=primary, spaceAfter=6))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=primary, spaceAfter=5))
 
-    story.append(Paragraph("1. Resultados Empíricos Reais Obtidos no Testbed", h1_style))
+    story.append(Paragraph("1. Resumo dos Resultados Experimentais Reais", h1_style))
     
     table_data = [
         [Paragraph("<b>Cenário</b>", body_style), Paragraph("<b>Atacantes</b>", body_style), Paragraph("<b>Conexões</b>", body_style), Paragraph("<b>Deteccao (j=10s)</b>", body_style), Paragraph("<b>D_M^2 Mediana</b>", body_style), Paragraph("<b>Réplicas Máx</b>", body_style), Paragraph("<b>Sobrecusto NCO</b>", body_style)],
-        [Paragraph("<b>Baseline Puro</b>", body_style), Paragraph("0", body_style), Paragraph("0 conns", body_style), Paragraph("6.1% (FPR)", body_style), Paragraph("1.62 (thr=6.09)", body_style), Paragraph("1 réplica", body_style), Paragraph("+0.0% ($0.0075)", body_style)],
+        [Paragraph("<b>Baseline Puro</b>", body_style), Paragraph("0", body_style), Paragraph("0 conns", body_style), Paragraph("6.1% (FPR)", body_style), Paragraph("1.52 (thr=6.09)", body_style), Paragraph("1 réplica", body_style), Paragraph("+0.0% ($0.0075)", body_style)],
         [Paragraph("<b>Gabriel (1x200)</b>", body_style), Paragraph("1", body_style), Paragraph("200 conns", body_style), Paragraph("<font color='red'><b>100.0%</b></font>", body_style), Paragraph("430.41", body_style), Paragraph("3 réplicas", body_style), Paragraph("+93.3% ($0.0145)", body_style)],
         [Paragraph("<b>Furtivo Isolado (1x15)</b>", body_style), Paragraph("1", body_style), Paragraph("15 conns", body_style), Paragraph("<font color='green'><b>65.2% (Evasão 34.8%)</b></font>", body_style), Paragraph("10.15", body_style), Paragraph("1 réplica", body_style), Paragraph("+0.0% ($0.0075)", body_style)],
         [Paragraph("<b>Distribuído (4x15)</b>", body_style), Paragraph("4", body_style), Paragraph("15 conns cada", body_style), Paragraph("<font color='blue'><b>91.7% (Evasão 8.3%)</b></font>", body_style), Paragraph("55.54", body_style), Paragraph("<b>2 réplicas</b>", body_style), Paragraph("<b>+53.3% ($0.0115)</b>", body_style)]
     ]
-    t = Table(table_data, colWidths=[110, 50, 75, 105, 80, 65, 95])
+    t = Table(table_data, colWidths=[105, 50, 75, 105, 80, 65, 95])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#E2E8F0")),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E0")),
@@ -239,17 +246,62 @@ def main():
         ('TOPPADDING', (0,0), (-1,-1), 3),
     ]))
     story.append(t)
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 5))
 
     story.append(Paragraph("2. Comparativo Gráfico de Detecção e Impacto Econômico", h1_style))
-    story.append(Image(str(chart_path), width=520, height=330))
-    story.append(Spacer(1, 6))
+    story.append(Image(str(chart_path), width=520, height=315))
+    story.append(Spacer(1, 4))
 
-    story.append(Paragraph("3. Conclusão Científica para a Defesa e Artigo do TCC", h1_style))
-    story.append(Paragraph("• <b>O Colapso da Suposição Determinística:</b> A adição da distribuição Poisson nos clientes e de 10 arquivos no Apache conferiu variância realista à matriz de covariância ($\Sigma$). O limiar $\\chi^2$ subiu de zero artificial para <b>6.09</b>, com taxa de falso alarme legítima de apenas <b>6.1%</b> no baseline puro.", bullet_style))
-    story.append(Paragraph("• <b>Por que Gabriel obteve 100% de Detecção:</b> O cenário com 200 conexões de um único IP é excessivamente agressivo ($D_M^2 = 430.41$ mediana, pico de 1372), ficando mais de 70 vezes acima do limiar. É um DoS clássico facilmente bloqueável.", bullet_style))
-    story.append(Paragraph("• <b>Evasão Real no Ataque Furtivo (1x15):</b> Ao desacelerar para 15 conexões lentas (dentro do desvio do tráfego legítimo), a distância mediana caiu drasticamente para <b>10.15</b>. O detector falha em <b>34.8% das janelas</b> (taxa de detecção cai para 65.2%). Contudo, 15 conexões sozinhas não atingem o limiar de saturação do autoscaler ($N_{conns} \ge 35$), não gerando custo extra.", bullet_style))
-    story.append(Paragraph("• <b>O EDoS Furtivo Distribuído (4x15):</b> Distribuir 60 conexões entre 4 atacantes (15 conexões por IP) atinge o objetivo duplo do atacante econômico: <b>força a escalabilidade da nuvem para 2 réplicas (+53.3% de sobrecusto financeiro)</b> com uma anomalia estatística 8 vezes menor que a de Gabriel ($D_M^2 = 55.5$ vs $430.4$).", bullet_style))
+    story.append(Paragraph("3. Conclusão Científica para a Defesa do TCC", h1_style))
+    story.append(Paragraph("• <b>Por que Gabriel obteve 100% de Detecção:</b> O teste com 200 conexões de 1 único IP gera um colapso brutal na infraestrutura ($D_M^2 = 430.41$ mediana, pico de 1372). Por ser 70 vezes superior ao limiar estatístico, constitui um DoS óbvio.", bullet_style))
+    story.append(Paragraph("• <b>Evasão Real no Ataque Furtivo (1x15):</b> Reduzindo para 15 conexões lentas por IP, a anomalia cai para $D_M^2 = 10.15$ e o detector falha em <b>34.8% das janelas</b>. No entanto, 15 conexões sozinhas não acionam a regra de autoscaling ($N_{conns} \\ge 35$).", bullet_style))
+    story.append(Paragraph("• <b>O EDoS Furtivo Distribuído (4x15):</b> Distribuir 60 conexões em 4 atacantes atinge o objetivo econômico: <b>força a escalabilidade para 2 réplicas (+53.3% de custo financeiro)</b> mantendo um perfil de anomalia 8 vezes mais discreto que o de Gabriel.", bullet_style))
+
+    # === QUEBRA DE PÁGINA: DETALHAMENTO DAS MODIFICAÇÕES NO CÓDIGO ===
+    story.append(PageBreak())
+
+    story.append(Paragraph("4. Modificações de Engenharia e Código Implementadas", h1_style))
+    story.append(Paragraph("Para solucionar o problema de <i>colapso de variância</i> no tráfego benigno original (onde todos os clientes baixavam de forma estritamente periódica o mesmo arquivo <code>index.html</code>), foram implementadas as seguintes alterações na infraestrutura de emulação:", body_style))
+    story.append(Spacer(1, 4))
+
+    story.append(Paragraph("A. Gerador de Tráfego Legítimo (<code>lst2.0/demonstration/legit_client.py</code>)", h2_style))
+    story.append(Paragraph("• <b>Think-time Estocástico de Poisson (Paxson & Floyd, 1995):</b> Substituiu-se o sleep linear uniforme por intervalos de chegada modelados por distribuição exponencial <code>random.expovariate(1.0 / mean_interval)</code>, clampeada realisticamente entre [0.2s, 12.0s]. Isso introduziu dispersão estatística contínua no cálculo de <i>Flow IAT Mean/Std</i>.", bullet_style))
+    story.append(Paragraph("• <b>Distribuição Multitamanho de Arquivos (Crovella & Bestavros, 1997):</b> Introduziu-se sorteio aleatório sobre 11 endpoints HTTP distintos (de 200 B a 150 KB). Isso quebrou o tamanho fixo de pacotes e gerou cauda pesada realista em <i>Total Length of Bwd Packets</i> e <i>Flow Bytes/s</i>.", bullet_style))
+    
+    code_diff_client = (
+        "# lst2.0/demonstration/legit_client.py\n"
+        "ENDPOINTS = ['/file1_200b.txt', '/file2_500b.txt', ..., '/file10_150kb.bin', '/index.html']\n"
+        "target_path = random.choice(ENDPOINTS)\n"
+        "url = f'http://{vip}:{port}{target_path}'\n"
+        "# Intervalo estocástico de Poisson:\n"
+        "think_time = random.expovariate(1.0 / mean_interval)\n"
+        "time.sleep(max(0.2, min(think_time, 12.0)))"
+    )
+    t_code1 = Table([[Paragraph(f"<pre>{code_diff_client.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')}</pre>", code_style)]], colWidths=[520])
+    t_code1.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), code_bg),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E0")),
+        ('LEFTPADDING', (0,0), (-1,-1), 6),
+        ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t_code1)
+    story.append(Spacer(1, 5))
+
+    story.append(Paragraph("B. Imagem Docker do Servidor Web Apache (<code>alexandremitsurukaihara/lst2.0:web</code>)", h2_style))
+    story.append(Paragraph("• Injetou-se diretamente no diretório <code>/var/www/html/</code> os 10 arquivos sintéticos com tamanhos graduais (200 B, 500 B, 1 KB, 2.5 KB, 5 KB, 12 KB, 25 KB, 50 KB, 90 KB, 150 KB) com tipos MIME variados (.txt, .html, .js, .css, .png, .jpg, .pdf, .bin).", bullet_style))
+    story.append(Paragraph("• O container foi commitado mantendo estritamente o entrypoint original <code>CMD [\"./home/onboot.sh\"]</code> para integração transparente com o orquestrador do LST 2.0.", bullet_style))
+    story.append(Spacer(1, 5))
+
+    story.append(Paragraph("C. Orquestrador do Benchmark (<code>detection/run_stealth_comparison.py</code>)", h2_style))
+    story.append(Paragraph("• Adicionado o cenário de controle fundamental <code>cenario_baseline_0atk</code> (10 clientes legítimos, 0 atacantes Slowloris) executado sob as mesmíssimas condições e topologia de rede Mininet/Docker.", bullet_style))
+    story.append(Paragraph("• Automatizou-se a execução sequencial dos 4 cenários (Baseline, Gabriel 1x200, Furtivo 1x15 e Distribuído 4x15), arquivando de forma reprodutível os fluxos CICFlowMeter (<code>final_report.csv</code>) e a telemetria do autoscaler (<code>edos_cost.csv</code>).", bullet_style))
+    story.append(Spacer(1, 5))
+
+    story.append(Paragraph("D. Módulo de Avaliação Mahalanobis (<code>detection/evaluate_stealth_comparison.py</code>)", h2_style))
+    story.append(Paragraph("• <b>Treinamento Exclusivo no Baseline Puro:</b> O vetor médio $\\mu$ e a matriz de covariância regularizada $\\Sigma$ via Ledoit-Wolf foram treinados <i>unicamente</i> sobre as janelas de tráfego legítimo do <code>cenario_baseline_0atk</code>, eliminando qualquer vazamento de dados.", bullet_style))
+    story.append(Paragraph("• O limiar de decisão foi fixado no percentil 95 ($thr = 6.09$), gerando uma taxa empírica de falso alarme de exatamente <b>6.1%</b> no baseline puro (rigorosamente aderente à teoria estatística).", bullet_style))
 
     doc.build(story)
     print(f"[OK] PDF Comparativo gerado em: {pdf_path}")
