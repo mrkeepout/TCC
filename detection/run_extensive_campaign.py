@@ -120,9 +120,13 @@ def run_scenario(scen, idx, total):
             shutil.copy(f, scen_out / "final_report.csv")
             report_copied = True
     
-    cost_file = BASE_DIR / "edos_cost.csv"
-    if cost_file.exists():
-        shutil.copy(cost_file, scen_out / "edos_cost.csv")
+    # edos_cost.csv fica em flows/edos_cost.csv ou em demonstration/edos_cost.csv
+    cost_file_flows = flows_src / "edos_cost.csv"
+    cost_file_base = BASE_DIR / "edos_cost.csv"
+    if cost_file_flows.exists():
+        shutil.copy(cost_file_flows, scen_out / "edos_cost.csv")
+    elif cost_file_base.exists():
+        shutil.copy(cost_file_base, scen_out / "edos_cost.csv")
         
     cleanup_docker()
     
