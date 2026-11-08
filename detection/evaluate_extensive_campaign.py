@@ -266,10 +266,10 @@ def generate_multidimensional_plots(df):
     
     # Anotação de Trade-off
     ax.axvspan(15, 30, color="red", alpha=0.08)
-    ax.text(18, 50, "Macro-janelas ($j \\ge 15\\text{s}$):\nDetecção Total mas\nReação Tardia do Defensor", color="#900C3F", weight="bold", fontsize=9)
+    ax.text(18, 50, "Macro-janelas (j >= 15s):\nDetecção Total mas\nReação Tardia do Defensor", color="#900C3F", weight="bold", fontsize=9)
     
     ax.axvspan(3, 10, color="green", alpha=0.08)
-    ax.text(4, 15, "Micro-janelas ($j \\le 10\\text{s}$):\nAlta Evasão Furtiva\n(Ruído Mascara o Ataque)", color="#145A32", weight="bold", fontsize=9)
+    ax.text(4, 15, "Micro-janelas (j <= 10s):\nAlta Evasão Furtiva\n(Ruído Mascara o Ataque)", color="#145A32", weight="bold", fontsize=9)
     
     fig.tight_layout()
     plot_path = OUT_DIR / "curva_sensibilidade_janela_j.png"
