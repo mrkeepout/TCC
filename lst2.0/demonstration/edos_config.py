@@ -40,12 +40,12 @@ def web_ip(i: int) -> str:
 
 
 def client_ip(i: int) -> str:
-    # Legitimate clients occupy .51 .. .59 (l1 -> .51)
-    return subnet + str(50 + i)
+    # Legitimate clients occupy .31 .. .60 (up to 30 clients)
+    return subnet + str(30 + i)
 
 
 def attacker_ip(i: int) -> str:
-    # Attackers occupy .71 .. .79 (a1 -> .71)
+    # Attackers occupy .71 .. .95 (up to 25 attackers)
     return subnet + str(70 + i)
 
 
