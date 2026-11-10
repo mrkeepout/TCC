@@ -48,6 +48,8 @@ o LST não tinha nativamente e que foram implementados aqui:
 - **`l1..lM`** — clientes legítimos (tráfego HTTP benigno de fundo).
 - **`a1..aN`** — atacantes, dirigindo o **slowhttptest**.
 - **autoscaler** — processo no host que mede a carga e escala o pool.
+- **HRF (shadow)** — observador HTTP no ingresso do `lb`; registra o que seria
+  encaminhado ao Request Analyzer e possíveis bloqueios, sem interferir no tráfego.
 
 ## Por que o sinal de scaling é "conexões", não CPU
 
@@ -81,6 +83,8 @@ Selecionáveis em `edos_config.py` via `ATTACK_MODE`:
 | [`loadbalancer/lb.py`](loadbalancer/lb.py) | Proxy TCP round-robin com backends recarregados dinamicamente |
 | [`edos_attack/edos_attacker.py`](edos_attack/edos_attacker.py) | Wrapper do slowhttptest (modos `sustained`/`yoyo`) |
 | [`client_profiles.py`](client_profiles.py) | Framework de clientes benignos configuráveis (perfis `browsing`/`mailing`/`printing` no motor SURGE) |
+| [`http_request_filtering.py`](http_request_filtering.py) | Regras HRF em modo observacional e parser incremental de HTTP/1.x |
+| [`pydash_runner.py`](pydash_runner.py) | Executa o pyDash local e coleta eventos de buffer, throughput e QoE |
 | [`legit_client.py`](legit_client.py) | Gerador benigno ingênuo (single-rate) — **substituído** por `client_profiles.py`, mantido só para referência |
 
 ## Requisitos
@@ -92,6 +96,73 @@ Selecionáveis em `edos_config.py` via `ATTACK_MODE`:
   atacantes instalarem o `slowhttptest` em runtime).
 
 > Não roda sem root. Em WSL2 funciona desde que o Docker esteja ativo.
+
+### HRF (HTTP Request Filtering) em modo observacional
+
+O HRF segue o fluxo de Rao et al. (2019): o Request Filter consulta as listas
+allow/block; usuários permitidos passam pelo Network Analyzer, onde requisições
+grandes são escaladas ao Request Analyzer; usuários desconhecidos seguem ao
+Request Analyzer; e este avalia a taxa por IP. A descrição operacional do artigo
+não especifica limiares portáveis e não define claramente como o IAT participa
+da decisão. Assim, a implementação:
+
+- observa os pedidos HTTP/1.x em texto claro na entrada cliente→`lb` e preserva
+  o IP de origem antes do proxy TCP;
+- grava requisição, tamanho observado/declarado, classe de origem, taxa e IAT
+  em `flows/hrf_events.jsonl`;
+- registra o resultado hipotético em `decision` (`forward` / `would_block`),
+  mas **nunca descarta ou modifica pedidos**;
+- trata tamanho acima do limite como encaminhamento para análise, não como
+  classificação automática de ataque; IAT é telemetria, não regra de decisão.
+
+Parâmetros iniciais em `edos_config.py` (`HRF_SIZE_THRESHOLD_BYTES=1048576`,
+`HRF_REQUESTS_PER_SECOND_THRESHOLD=20`, janela de 1 s) são **valores
+experimentais do testbed, não números do artigo**. Devem ser calibrados com
+rodadas benignas, inclusive o perfil pyDash, e registrados no manifesto do run.
+A allowlist inicial cobre `.51–.99`; a blocklist começa vazia. HTTP chunked é
+observado com tamanho não determinado; HTTPS/TLS não é inspecionado.
+
+### Usuário pyDash
+
+O perfil `pydash` executa o checkout existente no host (`PYDASH_SOURCE_DIR`,
+padrão `/home/matheus/pydash`) dentro de um container com as dependências
+Python do player. O container é construído sob demanda a partir de
+`docker/pydash_client/Dockerfile` quando o perfil for selecionado.
+
+Prepare um diretório local com manifesto MPD e todos os segmentos referenciados.
+O diretório inteiro é servido em cada réplica web como `/dash`, inclusive nas
+réplicas provisionadas pelo autoscaler. O perfil é selecionável na GUI; preencha
+o caminho do checkout e o diretório de mídia. Para configurar por código:
+
+```python
+FLEET = [
+    {'profile': 'mixed', 'count': 2},
+    {'profile': 'pydash', 'count': 1},
+]
+PYDASH_ENABLED = True
+PYDASH_SOURCE_DIR = '/home/matheus/pydash'
+PYDASH_MEDIA_DIR = '/caminho/local/para/dash-assets'
+PYDASH_MPD_FILE = 'manifest.mpd'
+PYDASH_MEDIA_URL_PATH = 'dash'
+```
+
+O pyDash local usa HTTP na porta 80, espera `Representation@bandwidth` e
+`SegmentTemplate@media` com `$Bandwidth$`/`$Number$`, e deriva a duração do
+segmento de um componente de caminho como `1sec`. Use mídia finita para que o
+player conclua o download e grave seu resumo. O orquestrador copia o checkout
+sem `.git`/`venv`, preserva os parâmetros do `dash_client.json` local e aponta o
+player para o VIP e o MPD emulado. Apenas a cópia temporária do player recebe a
+correção de URL relativa necessária às requisições de segmento; o checkout do
+usuário não é alterado. O serviço valida o MPD pelo VIP antes de começar a
+captura.
+
+Após o run, cada player gera `flows/pydash_lN/pydash.log`,
+`pydash_events.csv`, `pydash_qoe.json` e os gráficos produzidos pelo pyDash.
+O resumo contém pausas reportadas pelo player, amostras de buffer (em segmentos)
+e throughput.
+Esses resultados devem ser analisados junto da QoS HTTP dos demais perfis e do
+`flows/hrf_events.jsonl`; as taxas HRF precisam de calibração com a distribuição
+de pedidos DASH real.
 
 ## Como executar
 
@@ -145,6 +216,12 @@ Ele recomenda `SCALE_UP_CONN = ponto de saturação × SCALE_TARGET_UTIL` (padr�
 | `SLOW_CONNS` / `SLOW_RATE` / `SLOW_INTERVAL` | Força do slowhttptest (`-c` / `-r` / `-i`) |
 | `PULSE_ON` / `PULSE_OFF` | Duração dos pulsos no modo `yoyo`. **Precisam respeitar o ciclo de vida da réplica**: `PULSE_ON ≥ WARMUP_SECONDS` e `PULSE_OFF ≥ SCALE_DOWN_TICKS·TICK + DRAIN_TIMEOUT` — senão o serviço nunca escala de volta e o yo-yo degenera em `sustained` |
 | `FLEET` | Tráfego benigno declarativo: lista de `{profile, count}` (quantos e de qual tipo) |
+| `PYDASH_ENABLED` / `PYDASH_SOURCE_DIR` | Habilita o perfil pyDash e aponta para o checkout local |
+| `PYDASH_MEDIA_DIR` / `PYDASH_MPD_FILE` | Diretório local de mídia DASH e MPD relativo a ele |
+| `PYDASH_MEDIA_URL_PATH` | Caminho em que os assets DASH são servidos nas réplicas |
+| `HRF_ENABLED` | Ativa o registro HRF passivo no proxy de entrada (sem bloquear tráfego) |
+| `HRF_SIZE_THRESHOLD_BYTES` | Tamanho declarado/observado que encaminha pedido à análise HRF |
+| `HRF_REQUESTS_PER_SECOND_THRESHOLD` / `HRF_RATE_WINDOW_SECONDS` | Limite experimental por IP e janela móvel, não fornecidos pelo artigo |
 | `SEED` | Semente única do run, propagada aos clientes (reprodutibilidade) |
 | `NUM_CLIENTS` / `NUM_ATTACKERS` | Nº de atacantes; `NUM_CLIENTS` é fallback se `FLEET` estiver vazia |
 | `PCAP_ROTATE_SECONDS` | Intervalo de rotação do pcap (maior ⇒ corta menos conexões slow) |
@@ -179,6 +256,13 @@ WARMUP=30s, DRAIN=30s, PULSE_ON=60s, PULSE_OFF=60s, EXPERIMENT_DURATION=360s` (3
   status HTTP e sucesso/erro), copiado para fora do container **antes** do
   teardown. É a dimensão de disponibilidade: o dano colateral do ataque sobre o
   usuário legítimo.
+- **`flows/hrf_events.jsonl`** — observações e decisões candidatas do HRF em
+  shadow mode, sem bloqueio; inclui IAT e razões de encaminhamento.
+- `edos_metrics.py` inclui precisão, recall e taxa de falso positivo HRF usando
+  as faixas IP do testbed apenas como ground truth de avaliação (elas não
+  alimentam a decisão do detector).
+- **`flows/pydash_lN/`** — logs, eventos CSV, resumo de QoE e figuras de cada
+  cliente pyDash.
 - **`flows/edos_metrics.json`** — métricas derivadas (rode `python3 edos_metrics.py`
   após o experimento): **NCO** (overhead de custo normalizado sobre o baseline),
   **EAF** (fator de amplificação econômica = dano por byte do atacante) e

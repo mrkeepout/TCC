@@ -166,7 +166,38 @@
                                 <button @click="removeFleetRow(i)" :disabled="isRunning || config.FLEET.length<=1" class="text-slate2-400 hover:text-red-500 px-2 disabled:opacity-30" title="Remover">✕</button>
                             </div>
                             <button @click="addFleetRow" :disabled="isRunning" class="text-sm text-teal-600 hover:text-teal-500 mt-1 disabled:opacity-40">+ Adicionar perfil</button>
-                            <p class="text-[11px] text-slate2-500 pt-1">Perfis HTTP (motor SURGE): <b>mixed</b> usuário real (as 3 atividades juntas), <b>browsing</b> navegação, <b>mailing</b> rajadas + anexo, <b>printing</b> uploads grandes esporádicos.</p>
+                            <p class="text-[11px] text-slate2-500 pt-1">Perfis: <b>mixed</b>, <b>browsing</b>, <b>mailing</b>, <b>printing</b> (HTTP/SURGE) ou <b>pydash</b> (streaming DASH adaptativo).</p>
+                            <div v-if="config.FLEET.some(r => r.profile==='pydash' && Number(r.count)>0)" class="mt-3 space-y-3 border-t border-cloud-200 pt-3">
+                                <label class="block text-xs text-slate2-700">Checkout pyDash no host
+                                    <input v-model="config.PYDASH_SOURCE_DIR" :disabled="isRunning" class="field mt-1 w-full px-3 py-2" placeholder="/home/matheus/pydash">
+                                </label>
+                                <label class="block text-xs text-slate2-700">Diretório local com manifesto MPD e segmentos
+                                    <input v-model="config.PYDASH_MEDIA_DIR" :disabled="isRunning" class="field mt-1 w-full px-3 py-2" placeholder="/caminho/para/conteudo-dash">
+                                </label>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <label class="block text-xs text-slate2-700">Arquivo MPD
+                                        <input v-model="config.PYDASH_MPD_FILE" :disabled="isRunning" class="field mt-1 w-full px-3 py-2">
+                                    </label>
+                                    <label class="block text-xs text-slate2-700">Caminho HTTP
+                                        <input v-model="config.PYDASH_MEDIA_URL_PATH" :disabled="isRunning" class="field mt-1 w-full px-3 py-2">
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- HRF -->
+                    <section class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">🛡️ HRF (observação)</h2>
+                        <div class="space-y-3">
+                            <label class="flex items-center gap-2 text-sm text-slate2-700">
+                                <input type="checkbox" v-model="config.HRF_ENABLED" :disabled="isRunning">
+                                Registrar decisões candidatas sem bloquear requisições
+                            </label>
+                            <num-field label="Tamanho para encaminhar à análise (bytes)" v-model="config.HRF_SIZE_THRESHOLD_BYTES" :min="1" :disabled="isRunning"></num-field>
+                            <num-field label="Taxa por origem (requisições/s)" v-model="config.HRF_REQUESTS_PER_SECOND_THRESHOLD" :min="0.1" :step="0.1" :disabled="isRunning"></num-field>
+                            <num-field label="Janela de taxa (s)" v-model="config.HRF_RATE_WINDOW_SECONDS" :min="0.1" :step="0.1" :disabled="isRunning"></num-field>
+                            <p class="text-[11px] text-slate2-500">Os limiares iniciais são parâmetros experimentais, não valores publicados no artigo. IAT é registrado, mas não classifica por falta de regra operacional explícita.</p>
                         </div>
                     </section>
 
@@ -510,9 +541,15 @@
                 PRICING: {}, PRICING_CLOUD: 'aws',
                 ATTACK_MODE: 'yoyo', SLOW_TEST: 'slowloris',
                 SLOW_CONNS: 200, SLOW_RATE: 50, SLOW_INTERVAL: 10,
-                PULSE_ON: 20, PULSE_OFF: 20, EXPERIMENT_DURATION: 0
+                PULSE_ON: 20, PULSE_OFF: 20, EXPERIMENT_DURATION: 0,
+                HRF_ENABLED: true, HRF_SIZE_THRESHOLD_BYTES: 1048576,
+                HRF_REQUESTS_PER_SECOND_THRESHOLD: 20,
+                HRF_RATE_WINDOW_SECONDS: 1,
+                PYDASH_SOURCE_DIR: '/home/matheus/pydash',
+                PYDASH_MEDIA_DIR: '', PYDASH_MPD_FILE: 'manifest.mpd',
+                PYDASH_MEDIA_URL_PATH: 'dash'
             });
-            const PROFILES = ['mixed', 'browsing', 'mailing', 'printing'];
+            const PROFILES = ['mixed', 'browsing', 'mailing', 'printing', 'pydash'];
             const fleetTotal = computed(() =>
                 (config.FLEET || []).reduce((s, r) => s + (Number(r.count) || 0), 0));
 
@@ -690,6 +727,10 @@
                 if (!config.FLEET) return toast('Configure o tráfego benigno', 'error'), false;
                 if (fleetTotal.value > 49) return toast('Máximo de 49 clientes benignos (faixa de IP .51-.99)', 'error'), false;
                 if (config.NUM_ATTACKERS > 152) return toast('Máximo de 152 atacantes (faixa de IP .103-.254)', 'error'), false;
+                const pydashSelected = config.FLEET.some(
+                    r => r.profile === 'pydash' && Number(r.count) > 0);
+                if (pydashSelected && !config.PYDASH_MEDIA_DIR)
+                    return toast('Informe o diretório local com a mídia DASH', 'error'), false;
                 return true;
             };
 
@@ -698,7 +739,12 @@
                 logs.value = []; current.value = null; view.value = 'experiment'; runKind.value = 'experiment'; resetLive();
                 try {
                     const res = await fetch('/api/start', { method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ...config,
+                            PYDASH_ENABLED: config.FLEET.some(
+                                r => r.profile === 'pydash' && Number(r.count) > 0)
+                        }) });
                     if (res.ok) { status.value = 'running'; toast('Experimento iniciado', 'success'); startLogStream(); }
                     else toast((await res.json()).error || 'Erro ao iniciar', 'error');
                 } catch (e) { toast('Falha de conexão com o backend', 'error'); }

@@ -33,6 +33,7 @@
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 from host import Host
 
@@ -100,6 +101,19 @@ class Autoscaler(threading.Thread):
         node.connect(self._bridge)
         node.setIp(ip, cfg.mask, self._bridge)
         node.setDefaultGateway(cfg.gateway, self._bridge)
+        if getattr(cfg, 'PYDASH_ENABLED', False):
+            media_dir = Path(cfg.PYDASH_MEDIA_DIR).expanduser().resolve()
+            media_path = cfg.PYDASH_MEDIA_URL_PATH.strip('/')
+            if not media_path or '..' in Path(media_path).parts:
+                raise ValueError("PYDASH_MEDIA_URL_PATH must be a safe URL path")
+            destination = f"/var/www/html/{media_path}"
+            subprocess.run(
+                ["docker", "exec", name, "mkdir", "-p", destination],
+                check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["docker", "cp", str(media_dir / "."),
+                 f"{name}:{destination}/"],
+                check=True, capture_output=True, text=True)
         r = Replica(i, node, now)
         if immediate:
             # Baseline pool: the service was already warm before the attack.
