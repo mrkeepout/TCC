@@ -22,11 +22,16 @@
 
 import json
 import signal
+import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from glob import glob
 from os import cpu_count, getcwd, path
+from pathlib import Path
+from urllib.parse import quote
 
 from host import Host
 from switch import Switch
@@ -40,10 +45,23 @@ from edos_autoscaler import Autoscaler
 nodes = {}
 autoscaler = None
 RUN_START = time.time()
+PYDASH_CLIENTS = set()
 
 
 def printTerm(string: str) -> None:
     subprocess.run(f"echo \"{string}\"", shell=True)
+
+
+def archivePreviousNewArtifacts() -> None:
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    previous_hrf = Path(cfg.HRF_EVENTS_PATH)
+    if previous_hrf.is_file() and previous_hrf.stat().st_size:
+        previous_hrf.rename(
+            previous_hrf.with_name(f"hrf_events_{timestamp}.jsonl"))
+    for previous in Path("flows").glob("pydash_l*"):
+        if previous.is_dir():
+            previous.rename(
+                previous.with_name(f"archived_{previous.name}_{timestamp}"))
 
 
 # --- Topology building blocks --------------------------------------------
@@ -83,14 +101,37 @@ def createLoadBalancer() -> None:
     nodes['lb'] = Host('lb')
     nodes['lb'].instantiate(cfg.linuxclient)
     attachHost(nodes['lb'], cfg.lb_vip)
-    nodes['lb'].copyLocalToContainer('loadbalancer/lb.py', '/home/lb.py')
+    subprocess.run(
+        ["docker", "cp", "loadbalancer/lb.py", "lb:/home/lb.py"],
+        check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["docker", "cp", "http_request_filtering.py",
+         "lb:/home/http_request_filtering.py"],
+        check=True, capture_output=True, text=True)
 
 
 def startLoadBalancer() -> None:
     printTerm("[LST2.0][EDoS] ... Starting round-robin proxy on VIP")
-    nodes['lb'].run(
-        f"bash -c 'python3 /home/lb.py {cfg.lb_vip} {cfg.TARGET_PORT} "
-        f"/home/backends.txt > /home/lb.log 2>&1 &'")
+    args = [
+        "python3", "/home/lb.py", cfg.lb_vip, str(cfg.TARGET_PORT),
+        "/home/backends.txt",
+    ]
+    if getattr(cfg, 'HRF_ENABLED', False):
+        args.extend([
+            "--hrf-log", "/home/hrf_events.jsonl",
+            "--hrf-size-bytes", str(cfg.HRF_SIZE_THRESHOLD_BYTES),
+            "--hrf-requests-per-second",
+            str(cfg.HRF_REQUESTS_PER_SECOND_THRESHOLD),
+            "--hrf-window-seconds", str(cfg.HRF_RATE_WINDOW_SECONDS),
+            "--hrf-allowlist", ",".join(cfg.HRF_ALLOWLIST),
+            "--hrf-blocklist", ",".join(cfg.HRF_BLOCKLIST),
+        ])
+    command = shlex.join(args) + " > /home/lb.log 2>&1 &"
+    result = nodes['lb'].run("bash -c " + shlex.quote(command))
+    if result.returncode:
+        raise RuntimeError(
+            "Could not start load balancer: "
+            + result.stderr.decode("utf-8", "replace"))
 
 
 def expandFleet() -> list:
@@ -102,8 +143,107 @@ def expandFleet() -> list:
         return ['browsing'] * cfg.NUM_CLIENTS
     profiles = []
     for entry in fleet:
-        profiles.extend([entry['profile']] * int(entry.get('count', 1)))
+        profile = entry['profile']
+        if profile == 'pydash' and not getattr(cfg, 'PYDASH_ENABLED', False):
+            continue
+        profiles.extend([profile] * int(entry.get('count', 1)))
     return profiles
+
+
+def preparePydash() -> None:
+    if not getattr(cfg, 'PYDASH_ENABLED', False):
+        return
+    if cfg.TARGET_PORT != 80:
+        raise ValueError(
+            "The local pyDash ConnectionHandler uses HTTP port 80; "
+            "set TARGET_PORT=80 for the pyDash profile")
+    source = Path(cfg.PYDASH_SOURCE_DIR).expanduser().resolve()
+    media = Path(cfg.PYDASH_MEDIA_DIR).expanduser().resolve()
+    mpd = Path(cfg.PYDASH_MPD_FILE)
+    if not (source / "main.py").is_file() or not (source / "dash_client.json").is_file():
+        raise FileNotFoundError(
+            f"PYDASH_SOURCE_DIR must contain main.py and dash_client.json: {source}")
+    if not media.is_dir():
+        raise FileNotFoundError(
+            f"Set PYDASH_MEDIA_DIR to a local DASH asset directory: {media}")
+    if mpd.is_absolute() or ".." in mpd.parts or not (media / mpd).is_file():
+        raise FileNotFoundError(
+            f"PYDASH_MPD_FILE must name an MPD file inside {media}: {mpd}")
+    media_url_path = Path(cfg.PYDASH_MEDIA_URL_PATH)
+    if media_url_path.is_absolute() or ".." in media_url_path.parts:
+        raise ValueError("PYDASH_MEDIA_URL_PATH must be a relative URL path")
+
+    check = subprocess.run(
+        ["docker", "image", "inspect", cfg.pydashclient],
+        capture_output=True, text=True)
+    if check.returncode == 0:
+        return
+    if not getattr(cfg, 'PYDASH_BUILD_IMAGE', False):
+        raise RuntimeError(
+            f"Docker image {cfg.pydashclient} is missing; build "
+            "lst2.0/docker/pydash_client or enable PYDASH_BUILD_IMAGE")
+    context = Path(__file__).resolve().parent.parent / "docker" / "pydash_client"
+    printTerm(f"[LST2.0][EDoS] Building pyDash image {cfg.pydashclient}")
+    subprocess.run(
+        ["docker", "build", "--tag", cfg.pydashclient, str(context)],
+        check=True)
+
+
+def createPydashClient(node: Host, client_id: int) -> None:
+    source = Path(cfg.PYDASH_SOURCE_DIR).expanduser().resolve()
+    media_url_path = cfg.PYDASH_MEDIA_URL_PATH.strip("/")
+    mpd_path = quote(Path(cfg.PYDASH_MPD_FILE).as_posix(), safe="/")
+    mpd_url = f"http://{cfg.TARGET_VIP}/{media_url_path}/{mpd_path}"
+
+    with open(source / "dash_client.json", encoding="utf-8") as config_file:
+        dash_config = json.load(config_file)
+    dash_config["url_mpd"] = mpd_url
+
+    with tempfile.TemporaryDirectory(prefix="lst-pydash-") as staging:
+        staged = Path(staging) / "pydash"
+        shutil.copytree(
+            source, staged,
+            ignore=shutil.ignore_patterns(
+                ".git", "venv", "__pycache__", "*.pyc", "results"))
+        player_path = staged / "player" / "player.py"
+        player_source = player_path.read_text(encoding="utf-8")
+        original_path = "segment_request.add_path_name('/'.join(url_tokens[:len(url_tokens) - 1]))"
+        local_path = "segment_request.add_path_name('/' + '/'.join(url_tokens[3:-1]))"
+        if player_source.count(original_path) != 1:
+            raise RuntimeError(
+                "Unsupported pyDash Player.request_next_segment implementation; "
+                "cannot safely make its segment URLs relative")
+        player_path.write_text(
+            player_source.replace(original_path, local_path, 1),
+            encoding="utf-8")
+        (staged / "dash_client.json").write_text(
+            json.dumps(dash_config, indent=2) + "\n", encoding="utf-8")
+        subprocess.run(
+            ["docker", "cp", str(staged) + "/.", f"{node.getNodeName()}:/home/pydash"],
+            check=True, capture_output=True, text=True)
+
+    subprocess.run(
+        ["docker", "cp", "pydash_runner.py",
+         f"{node.getNodeName()}:/home/pydash_runner.py"],
+        check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["docker", "exec", node.getNodeName(), "mkdir", "-p",
+         "/home/pydash/results"],
+        check=True, capture_output=True, text=True)
+
+    command = shlex.join([
+        "python3", "/home/pydash_runner.py",
+        "--source", "/home/pydash",
+        "--log", "/home/pydash.log",
+        "--events", "/home/pydash_events.csv",
+        "--summary", "/home/pydash_qoe.json",
+    ]) + " > /home/pydash_runner.log 2>&1 &"
+    result = node.run("bash -c " + shlex.quote(command))
+    if result.returncode:
+        raise RuntimeError(
+            f"Could not start pyDash client {node.getNodeName()}: "
+            + result.stderr.decode("utf-8", "replace"))
+    PYDASH_CLIENTS.add(node.getNodeName())
 
 
 def createClients() -> None:
@@ -114,15 +254,20 @@ def createClients() -> None:
         name = f"l{i}"
         printTerm(f"[LST2.0][EDoS] Creating benign client {name} (profile={profile})")
         nodes[name] = Host(name)
-        nodes[name].instantiate(cfg.linuxclient)
+        image = cfg.pydashclient if profile == 'pydash' else cfg.linuxclient
+        nodes[name].instantiate(image)
         attachHost(nodes[name], cfg.client_ip(i))
-        nodes[name].copyLocalToContainer('client_profiles.py', '/home/client_profiles.py')
-        nodes[name].run(
-            f"bash -c 'python3 /home/client_profiles.py "
-            f"--profile {profile} --target {cfg.TARGET_VIP} "
-            f"--port {cfg.TARGET_PORT} --seed {seed} --client-id {i} "
-            f"--duration {duration} --qos-csv /home/client_qos.csv "
-            f"> /home/client.log 2>&1 &'")
+        if profile == 'pydash':
+            createPydashClient(nodes[name], i)
+        else:
+            nodes[name].copyLocalToContainer(
+                'client_profiles.py', '/home/client_profiles.py')
+            nodes[name].run(
+                f"bash -c 'python3 /home/client_profiles.py "
+                f"--profile {profile} --target {cfg.TARGET_VIP} "
+                f"--port {cfg.TARGET_PORT} --seed {seed} --client-id {i} "
+                f"--duration {duration} --qos-csv /home/client_qos.csv "
+                f"> /home/client.log 2>&1 &'")
 
 
 def createAttackers() -> None:
@@ -166,6 +311,22 @@ def healthCheck() -> None:
     raise Exception(
         f"VIP {url} did not serve after {retries} attempts -- aborting "
         f"(topology/load balancer/replica did not come up)")
+
+
+def checkPydashMedia() -> None:
+    if not getattr(cfg, 'PYDASH_ENABLED', False):
+        return
+    media_url_path = cfg.PYDASH_MEDIA_URL_PATH.strip("/")
+    mpd_path = quote(Path(cfg.PYDASH_MPD_FILE).as_posix(), safe="/")
+    url = (f"http://{cfg.TARGET_VIP}:{cfg.TARGET_PORT}/"
+           f"{media_url_path}/{mpd_path}")
+    result = subprocess.run(
+        ["docker", "exec", "lb", "wget", "-q", "-T", "8", "-O", "/dev/null", url],
+        capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(
+            f"pyDash MPD is not reachable through the VIP ({url}): "
+            f"{result.stderr.strip()}")
 
 
 def writeManifest() -> None:
@@ -216,6 +377,32 @@ def collectClientQoS():
     for name, node in nodes.items():
         if not name.startswith('l'):
             continue
+        if name in PYDASH_CLIENTS:
+            destination = Path('flows') / f'pydash_{name}'
+            destination.mkdir(parents=True, exist_ok=True)
+            for remote_name in (
+                "pydash.log", "pydash_runner.log",
+                "pydash_events.csv", "pydash_qoe.json",
+            ):
+                result = subprocess.run(
+                    ["docker", "cp", f"{name}:/home/{remote_name}",
+                     str(destination / remote_name)],
+                    capture_output=True, text=True)
+                if result.returncode:
+                    printTerm(
+                        f"[LST2.0][EDoS] WARNING: no {remote_name} from {name}: "
+                        f"{result.stderr.strip()}")
+            results_dir = destination / "results"
+            results_dir.mkdir(exist_ok=True)
+            result = subprocess.run(
+                ["docker", "cp", f"{name}:/home/pydash/results/.",
+                 str(results_dir)],
+                capture_output=True, text=True)
+            if result.returncode:
+                printTerm(
+                    f"[LST2.0][EDoS] WARNING: pyDash plots unavailable for "
+                    f"{name}: {result.stderr.strip()}")
+            continue
         try:
             node.copyContainerToLocal('/home/client_qos.csv',
                                       f'flows/qos_{name}.csv')
@@ -223,7 +410,22 @@ def collectClientQoS():
             pass  # a client that never wrote a QoS file just has nothing to copy
 
 
+def collectHRFEvents() -> None:
+    if not getattr(cfg, 'HRF_ENABLED', False) or 'lb' not in nodes:
+        return
+    destination = Path(cfg.HRF_EVENTS_PATH)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["docker", "cp", "lb:/home/hrf_events.jsonl", str(destination)],
+        capture_output=True, text=True)
+    if result.returncode:
+        printTerm(
+            "[LST2.0][EDoS] WARNING: HRF event log unavailable: "
+            + result.stderr.strip())
+
+
 def unmakeChanges():
+    collectHRFEvents()
     collectClientQoS()
     printTerm("[LST2.0][EDoS] Deleting containers")
     if autoscaler is not None:
@@ -325,6 +527,11 @@ try:
     printTerm("LST 2.0 EDoS testbed  Copyright (C) 2022\n\n"
               "\tThis program comes with ABSOLUTELY NO WARRANTY.\n\n")
     subprocess.run("mkdir flows 2>/dev/null", shell=True)
+    archivePreviousNewArtifacts()
+    preparePydash()
+    if getattr(cfg, 'HRF_ENABLED', False):
+        Path(cfg.HRF_EVENTS_PATH).parent.mkdir(parents=True, exist_ok=True)
+        Path(cfg.HRF_EVENTS_PATH).write_text('', encoding='utf-8')
 
     createBridge('br0')
     createController('c1', 'br0')
@@ -338,6 +545,7 @@ try:
     # Pre-flight: don't measure anything until the service actually serves, and
     # record how this run was produced (seed, config, git SHA) for reproducibility.
     healthCheck()
+    checkPydashMedia()
     writeManifest()
 
     createClients()

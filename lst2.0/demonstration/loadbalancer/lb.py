@@ -27,6 +27,13 @@ import sys
 import threading
 import time
 import itertools
+import argparse
+
+from http_request_filtering import (
+    HRFObserver,
+    HTTPRequestStream,
+    JSONLEventSink,
+)
 
 BUFFER = 65536
 
@@ -114,17 +121,26 @@ def pick_backend(backends):
     return backends[idx % len(backends)]
 
 
-def pipe(src, dst):
+def pipe(src, dst, inspector=None):
     try:
         while True:
             data = src.recv(BUFFER)
             if not data:
                 break
+            if inspector is not None:
+                try:
+                    inspector.feed(data)
+                except Exception as exc:
+                    sys.stderr.write(f"[hrf] observation failed: {exc}\n")
+                    sys.stderr.flush()
+                    inspector = None
             dst.sendall(data)
             _add_bytes(len(data))
     except OSError:
         pass
     finally:
+        if inspector is not None:
+            inspector.close()
         for s in (src, dst):
             try:
                 s.shutdown(socket.SHUT_RDWR)
@@ -132,7 +148,7 @@ def pipe(src, dst):
                 pass
 
 
-def handle(client, backends_path):
+def handle(client, backends_path, observer=None):
     # Count this connection for its whole lifetime: this runs in its own thread
     # (spawned per accept), so joining the relay below does not block accepts.
     _adjust_count(1)
@@ -150,7 +166,16 @@ def handle(client, backends_path):
             return
         # Bidirectional relay. One thread each way; connections are held open for
         # as long as the client keeps them (this is what a Slowloris exploits).
-        t1 = threading.Thread(target=pipe, args=(client, upstream), daemon=True)
+        inspector = None
+        if observer is not None:
+            try:
+                source_ip = client.getpeername()[0]
+                inspector = HTTPRequestStream(source_ip, observer)
+            except OSError as exc:
+                sys.stderr.write(f"[hrf] cannot inspect client endpoint: {exc}\n")
+                sys.stderr.flush()
+        t1 = threading.Thread(
+            target=pipe, args=(client, upstream, inspector), daemon=True)
         t2 = threading.Thread(target=pipe, args=(upstream, client), daemon=True)
         t1.start()
         t2.start()
@@ -162,9 +187,31 @@ def handle(client, backends_path):
 
 
 def main():
-    listen_ip = sys.argv[1]
-    listen_port = int(sys.argv[2])
-    backends_path = sys.argv[3]
+    parser = argparse.ArgumentParser(description="LST TCP round-robin proxy")
+    parser.add_argument("listen_ip")
+    parser.add_argument("listen_port", type=int)
+    parser.add_argument("backends_file")
+    parser.add_argument("--hrf-log")
+    parser.add_argument("--hrf-size-bytes", type=int, default=1048576)
+    parser.add_argument("--hrf-requests-per-second", type=float, default=20.0)
+    parser.add_argument("--hrf-window-seconds", type=float, default=1.0)
+    parser.add_argument("--hrf-allowlist", default="")
+    parser.add_argument("--hrf-blocklist", default="")
+    args = parser.parse_args()
+    listen_ip = args.listen_ip
+    listen_port = args.listen_port
+    backends_path = args.backends_file
+
+    observer = None
+    if args.hrf_log:
+        observer = HRFObserver(
+            JSONLEventSink(args.hrf_log),
+            request_size_threshold_bytes=args.hrf_size_bytes,
+            requests_per_second_threshold=args.hrf_requests_per_second,
+            rate_window_seconds=args.hrf_window_seconds,
+            allowlist=[v for v in args.hrf_allowlist.split(",") if v],
+            blocklist=[v for v in args.hrf_blocklist.split(",") if v],
+        )
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -181,7 +228,9 @@ def main():
             client, _ = server.accept()
         except OSError:
             continue
-        threading.Thread(target=handle, args=(client, backends_path), daemon=True).start()
+        threading.Thread(
+            target=handle, args=(client, backends_path, observer), daemon=True
+        ).start()
 
 
 if __name__ == '__main__':

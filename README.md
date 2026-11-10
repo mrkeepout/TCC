@@ -19,6 +19,8 @@ Este trabalho estende o **[Lightweight SDN Testbed (LST 2.0)](https://sol.sbc.or
 
 Para o cenário ser EDoS de verdade, o testbed ganhou dois ingredientes que o LST 2.0 não tinha nativamente: **elasticidade** (um *autoscaler* que provisiona/remove réplicas sob demanda) e **medição de custo** (contabilização de *réplica-segundos* — a "conta" da nuvem). A arquitetura completa está em [`lst2.0/demonstration/README_EDOS.md`](lst2.0/demonstration/README_EDOS.md).
 
+O testbed também inclui um observador **HRF (HTTP Request Filtering) em modo shadow**, que registra candidatos sem bloquear tráfego, e um perfil benigno opcional que executa o **pyDash** contra mídia DASH local servida pelas réplicas elásticas. A referência, os requisitos de mídia e as limitações de calibração estão na documentação da demonstração.
+
 ---
 
 ## Estrutura do repositório

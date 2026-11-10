@@ -34,6 +34,7 @@
 # Usage: python3 edos_metrics.py [--flows-dir flows] [--out flows/edos_metrics.json]
 
 import argparse
+from collections import Counter
 import csv
 import glob
 import json
@@ -207,6 +208,94 @@ def load_qos(flows_dir, cfg, t0):
     return agg, yoyo
 
 
+def load_hrf_events(flows_dir):
+    path = os.path.join(flows_dir, 'hrf_events.jsonl')
+    if not os.path.isfile(path):
+        return {'events': 0, 'shadow_candidates': 0, 'reasons': {},
+                'source_classes': {}, 'enforced_events': 0}
+    reasons = Counter()
+    source_classes = Counter()
+    records = 0
+    requests = 0
+    candidates = 0
+    enforced = 0
+    confusion = Counter()
+    with open(path, encoding='utf-8') as f:
+        for line_number, line in enumerate(f, start=1):
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError as exc:
+                raise ValueError(f"{path}:{line_number}: invalid JSON event") from exc
+            records += 1
+            is_request = event.get('event_type') == 'request_start'
+            requests += is_request
+            candidate = event.get('decision') == 'would_block'
+            candidates += is_request and candidate
+            enforced += event.get('enforced') is True
+            if event.get('reason'):
+                reasons[event['reason']] += 1
+            if event.get('source_class'):
+                source_classes[event['source_class']] += 1
+            if is_request:
+                try:
+                    octet = int(event['source_ip'].rsplit('.', 1)[1])
+                except (KeyError, ValueError, IndexError):
+                    confusion['unscored'] += 1
+                else:
+                    actual = (
+                        'attack' if 103 <= octet <= 254
+                        else 'benign' if 51 <= octet <= 99
+                        else None
+                    )
+                    if actual is None:
+                        confusion['unscored'] += 1
+                    else:
+                        confusion[('tp' if candidate else 'fn') if actual == 'attack'
+                                  else ('fp' if candidate else 'tn')] += 1
+    tp, fp, tn, fn = (confusion[k] for k in ('tp', 'fp', 'tn', 'fn'))
+    return {
+        'events': records,
+        'requests': requests,
+        'shadow_candidates': candidates,
+        'shadow_candidate_rate': rate(candidates, requests),
+        'reasons': dict(reasons),
+        'source_classes': dict(source_classes),
+        'enforced_events': enforced,
+        'ground_truth_evaluation': {
+            'tp': tp, 'fp': fp, 'tn': tn, 'fn': fn,
+            'unscored': confusion['unscored'],
+            'precision': rate(tp, tp + fp),
+            'recall': rate(tp, tp + fn),
+            'false_positive_rate': rate(fp, fp + tn),
+            'label_source': 'testbed IP ranges (.103-.254 attack, .51-.99 benign)',
+        },
+    }
+
+
+def load_pydash_qoe(flows_dir):
+    clients = []
+    for path in sorted(glob.glob(os.path.join(flows_dir, 'pydash_l*',
+                                               'pydash_qoe.json'))):
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+        client_name = os.path.basename(os.path.dirname(path))
+        if client_name.startswith('pydash_'):
+            client_name = client_name[len('pydash_'):]
+        clients.append({
+            'client': client_name,
+            'return_code': data.get('return_code'),
+            'pauses_number': data.get('pauses_number'),
+            'average_pause_seconds': data.get('average_pause_seconds'),
+            'average_quality_index': data.get('average_quality_index'),
+            'buffer_samples': data.get('buffer_samples', 0),
+            'minimum_buffer_segments': data.get('minimum_buffer_segments'),
+            'mean_throughput_bps': data.get('mean_throughput_bps'),
+        })
+    return {'clients': clients, 'client_count': len(clients)}
+
+
 # --- W_yoyo ---------------------------------------------------------------
 def w_yoyo(cost, cfg):
     if cfg['ATTACK_MODE'] != 'yoyo':
@@ -252,6 +341,8 @@ def main():
 
     wy, wy_note = w_yoyo(cost, cfg)
     qos, yoyo = load_qos(args.flows_dir, cfg, cost['t0'])
+    hrf = load_hrf_events(args.flows_dir)
+    pydash_qoe = load_pydash_qoe(args.flows_dir)
 
     lat = sorted(qos['latencies_ok'])
     result = {
@@ -288,6 +379,8 @@ def main():
             'success_rate_attack_on': rate(qos['on']['ok'], qos['on']['req']) if yoyo else None,
             'success_rate_attack_off': rate(qos['off']['ok'], qos['off']['req']) if yoyo else None,
         },
+        'hrf_shadow': hrf,
+        'pydash_qoe': pydash_qoe,
         'assumptions': {
             'baseline': 'MIN_REPLICAS * p_vm_per_sec * duration (compute floor, no scaling)',
             'EAF': 'extra_cost / attacker_bytes; ' + abytes_note,
@@ -334,6 +427,21 @@ def _print_report(r):
               f"/ {_fmt(q['success_rate_attack_off'],3)} (attack pulse)")
     for prof, v in q['by_profile'].items():
         print(f"    {prof:<12}: {v['requests']} reqs, success={_fmt(v['success_rate'],3)}")
+    hrf = r['hrf_shadow']
+    if hrf['events']:
+        print(f"  HRF shadow     : {hrf['shadow_candidates']} candidates / "
+              f"{hrf['requests']} requests; enforced={hrf['enforced_events']}")
+        evaluation = hrf['ground_truth_evaluation']
+        print(f"    HRF evaluation: precision={_fmt(evaluation['precision'],3)} "
+              f"recall={_fmt(evaluation['recall'],3)} "
+              f"FPR={_fmt(evaluation['false_positive_rate'],3)} "
+              f"(IP-range labels)")
+    pydash = r['pydash_qoe']
+    for client in pydash['clients']:
+        print(f"  pyDash {client['client']}: "
+              f"pauses={client['pauses_number']}, "
+              f"avg_pause={_fmt(client['average_pause_seconds'], 2)}s, "
+              f"mean_throughput={_fmt(client['mean_throughput_bps'], 0)}bps")
 
 
 if __name__ == '__main__':

@@ -22,6 +22,7 @@
 repository = 'alexandremitsurukaihara/lst2.0'
 webserver = repository + ':web'          # scalable backend (Apache on :80)
 linuxclient = repository + ':linuxclient'  # load balancer, attackers and clients
+pydashclient = repository + ':pydashclient'
 
 # --- Network layout: everything lives on a single /24 behind br0 ---
 subnet = '192.168.100.'
@@ -63,7 +64,7 @@ SEED = 1337
 # createClients() expands this into individual client containers on .51..59 and
 # launches client_profiles.py with the chosen profile. Grow the list without
 # touching the orchestration code. Profiles: browsing | mailing | printing
-# | mixed (the LST 2.0 behaviours reimplemented over HTTP in client_profiles.py).
+# | mixed (HTTP in client_profiles.py) | pydash (optional local DASH player).
 # 'mixed' is a single client that intercalates all three activities, like a real
 # user who browses, checks mail and prints in the same working session.
 FLEET = [
@@ -71,6 +72,16 @@ FLEET = [
     {'profile': 'browsing', 'count': 1},   # SURGE: human-like page views
     {'profile': 'mailing',  'count': 1},    # inbox fetch bursts + send w/ attachment
 ]
+
+# pyDash is opt-in because it requires a local DASH asset directory (manifest
+# plus the referenced media segments). Point this at the existing pyDash checkout
+# and a separate directory containing the DASH content to serve in the testbed.
+PYDASH_ENABLED = False
+PYDASH_SOURCE_DIR = '/home/matheus/pydash'
+PYDASH_MEDIA_DIR = ''
+PYDASH_MPD_FILE = 'manifest.mpd'
+PYDASH_MEDIA_URL_PATH = 'dash'
+PYDASH_BUILD_IMAGE = True
 
 # Fallback: if FLEET is empty, fall back to NUM_CLIENTS homogeneous 'browsing'
 # clients so the old behaviour (a plain client count) still works.
@@ -229,6 +240,17 @@ TARGET_PORT = 80
 # long slow connections at a rotation boundary (fewer SYN-less halves for
 # CICFlowMeter to mis-direction), complementing the flip-robust labelling.
 PCAP_ROTATE_SECONDS = 300
+
+# --- Passive HRF observation at the HTTP ingress ----------------------------
+# HRF observes cleartext HTTP/1.x at the client-facing TCP proxy. It records
+# decisions to flows/hrf_events.jsonl but never drops or changes requests.
+HRF_ENABLED = True
+HRF_SIZE_THRESHOLD_BYTES = 1048576
+HRF_REQUESTS_PER_SECOND_THRESHOLD = 20.0
+HRF_RATE_WINDOW_SECONDS = 1.0
+HRF_ALLOWLIST = [subnet + str(i) + '/32' for i in range(51, 100)]
+HRF_BLOCKLIST = []
+HRF_EVENTS_PATH = 'flows/hrf_events.jsonl'
 
 # --- Health check (abort early instead of capturing an empty run) ---
 HEALTHCHECK_RETRIES = 12

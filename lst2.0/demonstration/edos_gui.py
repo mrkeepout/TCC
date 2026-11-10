@@ -228,6 +228,20 @@ def get_defaults():
         'PULSE_ON': getattr(edos_config, 'PULSE_ON', 20),
         'PULSE_OFF': getattr(edos_config, 'PULSE_OFF', 20),
         'EXPERIMENT_DURATION': getattr(edos_config, 'EXPERIMENT_DURATION', 0),
+        'HRF_ENABLED': getattr(edos_config, 'HRF_ENABLED', True),
+        'HRF_SIZE_THRESHOLD_BYTES': getattr(
+            edos_config, 'HRF_SIZE_THRESHOLD_BYTES', 1048576),
+        'HRF_REQUESTS_PER_SECOND_THRESHOLD': getattr(
+            edos_config, 'HRF_REQUESTS_PER_SECOND_THRESHOLD', 20.0),
+        'HRF_RATE_WINDOW_SECONDS': getattr(
+            edos_config, 'HRF_RATE_WINDOW_SECONDS', 1.0),
+        'PYDASH_SOURCE_DIR': getattr(
+            edos_config, 'PYDASH_SOURCE_DIR', '/home/matheus/pydash'),
+        'PYDASH_MEDIA_DIR': getattr(edos_config, 'PYDASH_MEDIA_DIR', ''),
+        'PYDASH_MPD_FILE': getattr(
+            edos_config, 'PYDASH_MPD_FILE', 'manifest.mpd'),
+        'PYDASH_MEDIA_URL_PATH': getattr(
+            edos_config, 'PYDASH_MEDIA_URL_PATH', 'dash'),
         'subnet': getattr(edos_config, 'subnet', '192.168.100.'),
         'mask': getattr(edos_config, 'mask', 24),
         'TARGET_PORT': getattr(edos_config, 'TARGET_PORT', 80)
