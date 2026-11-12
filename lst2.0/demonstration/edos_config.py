@@ -64,22 +64,23 @@ SEED = 1337
 # createClients() expands this into individual client containers on .51..59 and
 # launches client_profiles.py with the chosen profile. Grow the list without
 # touching the orchestration code. Profiles: browsing | mailing | printing
-# | mixed (HTTP in client_profiles.py) | pydash (optional local DASH player).
+# | mixed (HTTP in client_profiles.py) | pydash (local DASH player).
 # 'mixed' is a single client that intercalates all three activities, like a real
 # user who browses, checks mail and prints in the same working session.
 FLEET = [
     {'profile': 'mixed',    'count': 2},   # usuário real: as 3 atividades juntas
     {'profile': 'browsing', 'count': 1},   # SURGE: human-like page views
     {'profile': 'mailing',  'count': 1},    # inbox fetch bursts + send w/ attachment
+    {'profile': 'pydash',   'count': 1},    # streaming DASH adaptativo
 ]
 
-# pyDash is opt-in because it requires a local DASH asset directory (manifest
-# plus the referenced media segments). Point this at the existing pyDash checkout
-# and a separate directory containing the DASH content to serve in the testbed.
-PYDASH_ENABLED = False
+# pyDash is enabled in the default fleet and requires a local DASH asset
+# directory (manifest plus referenced media segments). Its contents are mounted
+# read-only into each web replica, so replicas share one host-side copy.
+PYDASH_ENABLED = True
 PYDASH_SOURCE_DIR = '/home/matheus/pydash'
-PYDASH_MEDIA_DIR = ''
-PYDASH_MPD_FILE = 'manifest.mpd'
+PYDASH_MEDIA_DIR = '/home/matheus/Downloads/pydash-bbb'
+PYDASH_MPD_FILE = 'BigBuckBunny_1s_simple_2014_05_09.mpd'
 PYDASH_MEDIA_URL_PATH = 'dash'
 PYDASH_BUILD_IMAGE = True
 
