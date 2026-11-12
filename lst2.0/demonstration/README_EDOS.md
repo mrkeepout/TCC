@@ -130,7 +130,9 @@ Python do player. O container é construído sob demanda a partir de
 `docker/pydash_client/Dockerfile` quando o perfil for selecionado.
 
 Prepare um diretório local com manifesto MPD e todos os segmentos referenciados.
-O diretório é montado em modo somente leitura em cada réplica web como `/dash`,
+O diretório é montado em modo somente leitura em cada réplica web como
+`/dash/1sec` (o componente `1sec` é necessário para o pyDash identificar a
+duração dos segmentos),
 inclusive nas réplicas provisionadas pelo autoscaler; assim, os arquivos ficam
 armazenados apenas uma vez no host. O perfil é selecionável na GUI; preencha o
 caminho do checkout e o diretório de mídia. Para configurar por código:
@@ -144,7 +146,7 @@ PYDASH_ENABLED = True
 PYDASH_SOURCE_DIR = '/home/matheus/pydash'
 PYDASH_MEDIA_DIR = '/caminho/local/para/dash-assets'
 PYDASH_MPD_FILE = 'manifest.mpd'
-PYDASH_MEDIA_URL_PATH = 'dash'
+PYDASH_MEDIA_URL_PATH = 'dash/1sec'
 ```
 
 O pyDash local usa HTTP na porta 80, espera `Representation@bandwidth` e
