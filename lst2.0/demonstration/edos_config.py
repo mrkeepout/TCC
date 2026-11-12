@@ -81,7 +81,7 @@ PYDASH_ENABLED = True
 PYDASH_SOURCE_DIR = '/home/matheus/pydash'
 PYDASH_MEDIA_DIR = '/home/matheus/Downloads/pydash-bbb'
 PYDASH_MPD_FILE = 'BigBuckBunny_1s_simple_2014_05_09.mpd'
-PYDASH_MEDIA_URL_PATH = 'dash'
+PYDASH_MEDIA_URL_PATH = 'dash/1sec'
 PYDASH_BUILD_IMAGE = True
 
 # Fallback: if FLEET is empty, fall back to NUM_CLIENTS homogeneous 'browsing'
