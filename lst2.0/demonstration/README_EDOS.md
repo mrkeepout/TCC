@@ -130,9 +130,10 @@ Python do player. O container é construído sob demanda a partir de
 `docker/pydash_client/Dockerfile` quando o perfil for selecionado.
 
 Prepare um diretório local com manifesto MPD e todos os segmentos referenciados.
-O diretório inteiro é servido em cada réplica web como `/dash`, inclusive nas
-réplicas provisionadas pelo autoscaler. O perfil é selecionável na GUI; preencha
-o caminho do checkout e o diretório de mídia. Para configurar por código:
+O diretório é montado em modo somente leitura em cada réplica web como `/dash`,
+inclusive nas réplicas provisionadas pelo autoscaler; assim, os arquivos ficam
+armazenados apenas uma vez no host. O perfil é selecionável na GUI; preencha o
+caminho do checkout e o diretório de mídia. Para configurar por código:
 
 ```python
 FLEET = [
