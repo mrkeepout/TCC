@@ -50,6 +50,7 @@ o LST não tinha nativamente e que foram implementados aqui:
 - **autoscaler** — processo no host que mede a carga e escala o pool.
 - **HRF (shadow)** — observador HTTP no ingresso do `lb`; registra o que seria
   encaminhado ao Request Analyzer e possíveis bloqueios, sem interferir no tráfego.
+  **Desligado por padrão** (`HRF_ENABLED = False`).
 
 ## Por que o sinal de scaling é "conexões", não CPU
 
@@ -99,6 +100,9 @@ Selecionáveis em `edos_config.py` via `ATTACK_MODE`:
 
 ### HRF (HTTP Request Filtering) em modo observacional
 
+> **Desligado por padrão.** Para ligar, defina `HRF_ENABLED = True` em
+> `edos_config.py` (ou marque a opção na GUI).
+
 O HRF segue o fluxo de Rao et al. (2019): o Request Filter consulta as listas
 allow/block; usuários permitidos passam pelo Network Analyzer, onde requisições
 grandes são escaladas ao Request Analyzer; usuários desconhecidos seguem ao
@@ -122,11 +126,19 @@ rodadas benignas, inclusive o perfil pyDash, e registrados no manifesto do run.
 A allowlist inicial cobre `.51–.99`; a blocklist começa vazia. HTTP chunked é
 observado com tamanho não determinado; HTTPS/TLS não é inspecionado.
 
+> **Limitação:** a allowlist padrão (`.51–.99`) coincide com a faixa de IP usada
+> como rótulo benigno (ground truth). Portanto, as métricas HRF calculadas nessa
+> configuração são um **limite superior otimista**: a allowlist funciona como um
+> oráculo. A avaliação do HRF sem esse oráculo ainda está pendente.
+
 ### Usuário pyDash
 
-O perfil `pydash` executa o checkout existente no host (`PYDASH_SOURCE_DIR`,
-padrão `/home/matheus/pydash`) dentro de um container com as dependências
-Python do player. O container é construído sob demanda a partir de
+> **Desligado por padrão** (`PYDASH_ENABLED = False` e sem entrada `pydash` no
+> `FLEET` padrão). Para ligar, siga os passos abaixo.
+
+O perfil `pydash` executa um checkout local do pyDash existente no host
+(`PYDASH_SOURCE_DIR`, sem valor padrão; ex.: `/caminho/para/pydash`) dentro de
+um container com as dependências Python do player. O container é construído sob demanda a partir de
 `docker/pydash_client/Dockerfile` quando o perfil for selecionado.
 
 Prepare um diretório local com manifesto MPD e todos os segmentos referenciados.
@@ -135,7 +147,16 @@ O diretório é montado em modo somente leitura em cada réplica web como
 duração dos segmentos),
 inclusive nas réplicas provisionadas pelo autoscaler; assim, os arquivos ficam
 armazenados apenas uma vez no host. O perfil é selecionável na GUI; preencha o
-caminho do checkout e o diretório de mídia. Para configurar por código:
+caminho do checkout e o diretório de mídia. Para configurar fora da GUI, os
+dois caminhos vêm de variáveis de ambiente (nenhum caminho de máquina fica no
+repositório):
+
+```bash
+export PYDASH_SOURCE_DIR=/caminho/para/pydash
+export PYDASH_MEDIA_DIR=/caminho/para/conteudo-dash
+```
+
+e, em `edos_config.py`:
 
 ```python
 FLEET = [
@@ -143,11 +164,13 @@ FLEET = [
     {'profile': 'pydash', 'count': 1},
 ]
 PYDASH_ENABLED = True
-PYDASH_SOURCE_DIR = '/home/matheus/pydash'
-PYDASH_MEDIA_DIR = '/caminho/local/para/dash-assets'
 PYDASH_MPD_FILE = 'manifest.mpd'
 PYDASH_MEDIA_URL_PATH = 'dash/1sec'
 ```
+
+Com `PYDASH_ENABLED = False`, qualquer entrada `pydash` no `FLEET` é ignorada e
+nenhum arquivo do pyDash é exigido. Lembre que `sudo` descarta variáveis de
+ambiente por padrão: use `sudo -E` ou `sudo PYDASH_SOURCE_DIR=... PYDASH_MEDIA_DIR=... python3 edos.py`.
 
 O pyDash local usa HTTP na porta 80, espera `Representation@bandwidth` e
 `SegmentTemplate@media` com `$Bandwidth$`/`$Number$`, e deriva a duração do
@@ -219,10 +242,10 @@ Ele recomenda `SCALE_UP_CONN = ponto de saturação × SCALE_TARGET_UTIL` (padr�
 | `SLOW_CONNS` / `SLOW_RATE` / `SLOW_INTERVAL` | Força do slowhttptest (`-c` / `-r` / `-i`) |
 | `PULSE_ON` / `PULSE_OFF` | Duração dos pulsos no modo `yoyo`. **Precisam respeitar o ciclo de vida da réplica**: `PULSE_ON ≥ WARMUP_SECONDS` e `PULSE_OFF ≥ SCALE_DOWN_TICKS·TICK + DRAIN_TIMEOUT` — senão o serviço nunca escala de volta e o yo-yo degenera em `sustained` |
 | `FLEET` | Tráfego benigno declarativo: lista de `{profile, count}` (quantos e de qual tipo) |
-| `PYDASH_ENABLED` / `PYDASH_SOURCE_DIR` | Habilita o perfil pyDash e aponta para o checkout local |
-| `PYDASH_MEDIA_DIR` / `PYDASH_MPD_FILE` | Diretório local de mídia DASH e MPD relativo a ele |
+| `PYDASH_ENABLED` / `PYDASH_SOURCE_DIR` | Habilita o perfil pyDash (padrão `False`) e aponta para o checkout local (variável de ambiente `PYDASH_SOURCE_DIR`) |
+| `PYDASH_MEDIA_DIR` / `PYDASH_MPD_FILE` | Diretório local de mídia DASH (variável de ambiente `PYDASH_MEDIA_DIR`) e MPD relativo a ele |
 | `PYDASH_MEDIA_URL_PATH` | Caminho em que os assets DASH são servidos nas réplicas |
-| `HRF_ENABLED` | Ativa o registro HRF passivo no proxy de entrada (sem bloquear tráfego) |
+| `HRF_ENABLED` | Ativa o registro HRF passivo no proxy de entrada (sem bloquear tráfego); padrão `False` |
 | `HRF_SIZE_THRESHOLD_BYTES` | Tamanho declarado/observado que encaminha pedido à análise HRF |
 | `HRF_REQUESTS_PER_SECOND_THRESHOLD` / `HRF_RATE_WINDOW_SECONDS` | Limite experimental por IP e janela móvel, não fornecidos pelo artigo |
 | `SEED` | Semente única do run, propagada aos clientes (reprodutibilidade) |
@@ -262,8 +285,10 @@ WARMUP=30s, DRAIN=30s, PULSE_ON=60s, PULSE_OFF=60s, EXPERIMENT_DURATION=360s` (3
 - **`flows/hrf_events.jsonl`** — observações e decisões candidatas do HRF em
   shadow mode, sem bloqueio; inclui IAT e razões de encaminhamento.
 - `edos_metrics.py` inclui precisão, recall e taxa de falso positivo HRF usando
-  as faixas IP do testbed apenas como ground truth de avaliação (elas não
-  alimentam a decisão do detector).
+  as faixas IP do testbed como ground truth de avaliação. A allowlist HRF padrão
+  (`HRF_ALLOWLIST`, `.51–.99`) coincide com a faixa benigna usada como rótulo,
+  então essas métricas, nesse modo, são um **limite superior otimista**; a
+  avaliação sem esse oráculo está pendente.
 - **`flows/pydash_lN/`** — logs, eventos CSV, resumo de QoE e figuras de cada
   cliente pyDash.
 - **`flows/edos_metrics.json`** — métricas derivadas (rode `python3 edos_metrics.py`

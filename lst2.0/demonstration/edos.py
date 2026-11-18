@@ -157,6 +157,10 @@ def preparePydash() -> None:
         raise ValueError(
             "The local pyDash ConnectionHandler uses HTTP port 80; "
             "set TARGET_PORT=80 for the pyDash profile")
+    if not cfg.PYDASH_SOURCE_DIR or not cfg.PYDASH_MEDIA_DIR:
+        raise ValueError(
+            "PYDASH_ENABLED=True requires PYDASH_SOURCE_DIR and PYDASH_MEDIA_DIR "
+            "(export them as environment variables or set them in the GUI)")
     source = Path(cfg.PYDASH_SOURCE_DIR).expanduser().resolve()
     media = Path(cfg.PYDASH_MEDIA_DIR).expanduser().resolve()
     mpd = Path(cfg.PYDASH_MPD_FILE)

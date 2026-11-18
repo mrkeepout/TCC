@@ -18,6 +18,8 @@
 # experiment topology. All tunables live here so the experiment can be reshaped
 # without touching the orchestration logic.
 
+import os
+
 # --- Docker images (reuse the pre-built LST 2.0 images, no new build needed) ---
 repository = 'alexandremitsurukaihara/lst2.0'
 webserver = repository + ':web'          # scalable backend (Apache on :80)
@@ -71,15 +73,24 @@ FLEET = [
     {'profile': 'mixed',    'count': 2},   # usuário real: as 3 atividades juntas
     {'profile': 'browsing', 'count': 1},   # SURGE: human-like page views
     {'profile': 'mailing',  'count': 1},    # inbox fetch bursts + send w/ attachment
-    {'profile': 'pydash',   'count': 1},    # streaming DASH adaptativo
+    # pyDash (streaming DASH adaptativo) is OFF by default. To enable it, add
+    #     {'profile': 'pydash', 'count': 1},
+    # to this list, set PYDASH_ENABLED = True and export PYDASH_SOURCE_DIR and
+    # PYDASH_MEDIA_DIR (see below). With PYDASH_ENABLED = False any 'pydash'
+    # entry is skipped by expandFleet().
 ]
 
-# pyDash is enabled in the default fleet and requires a local DASH asset
-# directory (manifest plus referenced media segments). Its contents are mounted
-# read-only into each web replica, so replicas share one host-side copy.
-PYDASH_ENABLED = True
-PYDASH_SOURCE_DIR = '/home/matheus/pydash'
-PYDASH_MEDIA_DIR = '/home/matheus/Downloads/pydash-bbb'
+# pyDash is DISABLED by default. When enabled it requires a local pyDash
+# checkout (PYDASH_SOURCE_DIR, with main.py and dash_client.json) and a local
+# DASH asset directory (PYDASH_MEDIA_DIR: manifest plus referenced segments).
+# The media directory is mounted read-only into each web replica, so replicas
+# share one host-side copy. Both paths come from environment variables so no
+# machine-specific path lives in the repository, e.g.
+#     export PYDASH_SOURCE_DIR=/caminho/para/pydash
+#     export PYDASH_MEDIA_DIR=/caminho/para/conteudo-dash
+PYDASH_ENABLED = False
+PYDASH_SOURCE_DIR = os.environ.get('PYDASH_SOURCE_DIR', '')
+PYDASH_MEDIA_DIR = os.environ.get('PYDASH_MEDIA_DIR', '')
 PYDASH_MPD_FILE = 'BigBuckBunny_1s_simple_2014_05_09.mpd'
 PYDASH_MEDIA_URL_PATH = 'dash/1sec'
 PYDASH_BUILD_IMAGE = True
@@ -250,7 +261,12 @@ PCAP_ROTATE_SECONDS = 300
 # --- Passive HRF observation at the HTTP ingress ----------------------------
 # HRF observes cleartext HTTP/1.x at the client-facing TCP proxy. It records
 # decisions to flows/hrf_events.jsonl but never drops or changes requests.
-HRF_ENABLED = True
+# DISABLED by default; set HRF_ENABLED = True (or tick it in the GUI) to record.
+# NOTE: the default HRF_ALLOWLIST (.51-.99) is the same range used as the benign
+# ground-truth label, so HRF metrics computed with it are an optimistic upper
+# bound (the allowlist acts as an oracle). An evaluation without that oracle is
+# still pending.
+HRF_ENABLED = False
 HRF_SIZE_THRESHOLD_BYTES = 1048576
 HRF_REQUESTS_PER_SECOND_THRESHOLD = 20.0
 HRF_RATE_WINDOW_SECONDS = 1.0

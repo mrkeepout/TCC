@@ -228,7 +228,7 @@ def get_defaults():
         'PULSE_ON': getattr(edos_config, 'PULSE_ON', 20),
         'PULSE_OFF': getattr(edos_config, 'PULSE_OFF', 20),
         'EXPERIMENT_DURATION': getattr(edos_config, 'EXPERIMENT_DURATION', 0),
-        'HRF_ENABLED': getattr(edos_config, 'HRF_ENABLED', True),
+        'HRF_ENABLED': getattr(edos_config, 'HRF_ENABLED', False),
         'HRF_SIZE_THRESHOLD_BYTES': getattr(
             edos_config, 'HRF_SIZE_THRESHOLD_BYTES', 1048576),
         'HRF_REQUESTS_PER_SECOND_THRESHOLD': getattr(
@@ -236,7 +236,7 @@ def get_defaults():
         'HRF_RATE_WINDOW_SECONDS': getattr(
             edos_config, 'HRF_RATE_WINDOW_SECONDS', 1.0),
         'PYDASH_SOURCE_DIR': getattr(
-            edos_config, 'PYDASH_SOURCE_DIR', '/home/matheus/pydash'),
+            edos_config, 'PYDASH_SOURCE_DIR', ''),
         'PYDASH_MEDIA_DIR': getattr(edos_config, 'PYDASH_MEDIA_DIR', ''),
         'PYDASH_MPD_FILE': getattr(
             edos_config, 'PYDASH_MPD_FILE', 'manifest.mpd'),
