@@ -169,7 +169,7 @@
                             <p class="text-[11px] text-slate2-500 pt-1">Perfis: <b>mixed</b>, <b>browsing</b>, <b>mailing</b>, <b>printing</b> (HTTP/SURGE) ou <b>pydash</b> (streaming DASH adaptativo).</p>
                             <div v-if="config.FLEET.some(r => r.profile==='pydash' && Number(r.count)>0)" class="mt-3 space-y-3 border-t border-cloud-200 pt-3">
                                 <label class="block text-xs text-slate2-700">Checkout pyDash no host
-                                    <input v-model="config.PYDASH_SOURCE_DIR" :disabled="isRunning" class="field mt-1 w-full px-3 py-2" placeholder="/home/matheus/pydash">
+                                    <input v-model="config.PYDASH_SOURCE_DIR" :disabled="isRunning" class="field mt-1 w-full px-3 py-2" placeholder="/caminho/para/pydash">
                                 </label>
                                 <label class="block text-xs text-slate2-700">Diretório local com manifesto MPD e segmentos
                                     <input v-model="config.PYDASH_MEDIA_DIR" :disabled="isRunning" class="field mt-1 w-full px-3 py-2" placeholder="/caminho/para/conteudo-dash">
@@ -542,10 +542,10 @@
                 ATTACK_MODE: 'yoyo', SLOW_TEST: 'slowloris',
                 SLOW_CONNS: 200, SLOW_RATE: 50, SLOW_INTERVAL: 10,
                 PULSE_ON: 20, PULSE_OFF: 20, EXPERIMENT_DURATION: 0,
-                HRF_ENABLED: true, HRF_SIZE_THRESHOLD_BYTES: 1048576,
+                HRF_ENABLED: false, HRF_SIZE_THRESHOLD_BYTES: 1048576,
                 HRF_REQUESTS_PER_SECOND_THRESHOLD: 20,
                 HRF_RATE_WINDOW_SECONDS: 1,
-                PYDASH_SOURCE_DIR: '/home/matheus/pydash',
+                PYDASH_SOURCE_DIR: '',
                 PYDASH_MEDIA_DIR: '', PYDASH_MPD_FILE: 'manifest.mpd',
                 PYDASH_MEDIA_URL_PATH: 'dash'
             });
@@ -729,6 +729,8 @@
                 if (config.NUM_ATTACKERS > 152) return toast('Máximo de 152 atacantes (faixa de IP .103-.254)', 'error'), false;
                 const pydashSelected = config.FLEET.some(
                     r => r.profile === 'pydash' && Number(r.count) > 0);
+                if (pydashSelected && !config.PYDASH_SOURCE_DIR)
+                    return toast('Informe o diretório do checkout local do pyDash', 'error'), false;
                 if (pydashSelected && !config.PYDASH_MEDIA_DIR)
                     return toast('Informe o diretório local com a mídia DASH', 'error'), false;
                 return true;
