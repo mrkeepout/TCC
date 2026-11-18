@@ -14,5 +14,4 @@ detection/data
 
 # Dados de entrada do detector (pesados — gerados pelo testbed)
 detection/data/*.csv
-CLAUDE.md
 anotacoes.md

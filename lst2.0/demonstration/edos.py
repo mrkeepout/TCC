@@ -109,7 +109,12 @@ def expandFleet() -> list:
 def createClients() -> None:
     profiles = expandFleet()
     seed = getattr(cfg, 'SEED', 0)
-    duration = getattr(cfg, 'EXPERIMENT_DURATION', 0)
+    # Clients run with --duration 0 (until killed) instead of EXPERIMENT_DURATION.
+    # Each client counted its deadline from its own start, and clients start one
+    # after another, so the benign load dropped off in a staircase over the last
+    # ~40 s of the run and the window detector raised false alarms there. The
+    # teardown now ends every client at the same instant; QoS rows are written
+    # line-buffered, so nothing recorded before teardown is lost.
     for i, profile in enumerate(profiles, start=1):
         name = f"l{i}"
         printTerm(f"[LST2.0][EDoS] Creating benign client {name} (profile={profile})")
@@ -121,7 +126,7 @@ def createClients() -> None:
             f"bash -c 'python3 /home/client_profiles.py "
             f"--profile {profile} --target {cfg.TARGET_VIP} "
             f"--port {cfg.TARGET_PORT} --seed {seed} --client-id {i} "
-            f"--duration {duration} --qos-csv /home/client_qos.csv "
+            f"--duration 0 --qos-csv /home/client_qos.csv "
             f"> /home/client.log 2>&1 &'")
 
 
