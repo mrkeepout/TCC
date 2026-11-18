@@ -30,9 +30,11 @@
 #   * LCU cost -- compute (per billed replica) + ALB LCU (active & new conns) +
 #                 data processed, from a documented, swappable pricing profile.
 
+import shlex
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 from host import Host
 
@@ -96,7 +98,21 @@ class Autoscaler(threading.Thread):
         ip = cfg.web_ip(i)
         now = time.time()
         node = Host(name)
-        node.instantiate(cfg.webserver)
+        if getattr(cfg, 'PYDASH_ENABLED', False):
+            media_dir = Path(cfg.PYDASH_MEDIA_DIR).expanduser().resolve()
+            media_path = cfg.PYDASH_MEDIA_URL_PATH.strip('/')
+            if not media_path or '..' in Path(media_path).parts:
+                raise ValueError("PYDASH_MEDIA_URL_PATH must be a safe URL path")
+            destination = f"/var/www/html/{media_path}"
+            docker_command = shlex.join([
+                "docker", "run", "-d", "--network=none", "--privileged",
+                "--mount",
+                f"type=bind,source={media_dir},target={destination},readonly",
+                f"--name={name}", "--dns=8.8.8.8", cfg.webserver,
+            ])
+            node.instantiate(cfg.webserver, dockerCommand=docker_command)
+        else:
+            node.instantiate(cfg.webserver)
         node.connect(self._bridge)
         node.setIp(ip, cfg.mask, self._bridge)
         node.setDefaultGateway(cfg.gateway, self._bridge)
