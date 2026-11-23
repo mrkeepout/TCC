@@ -25,6 +25,9 @@ Para o cenário ser EDoS de verdade, o testbed ganhou dois ingredientes que o LS
 
 ```
 .
+├── detection/              # detector EDoS (edos_detect.py) e calibração do limiar (calibracao/)
+│   ├── calibracao/         # scripts de calibração do detector (FPR alvo, latência)
+│   └── out/                # resultados e figuras geradas pelo detector
 ├── infraestrutura/
 │   └── ataques/            # slow_attacks.py — Slowloris + RUDY didáticos (classe base SlowAttack)
 ├── lst2.0/                 # testbed LST 2.0 + topologia EDoS (fork de alexandrekaihara/lst2.0)
@@ -97,17 +100,26 @@ A assinatura de fluxo do *low-and-slow* (duração alta, `Bytes/s` e `Packets/s`
 
 ---
 
-## Cronograma (DESATUALIZADO)
+## Cronograma
 
 O andamento é acompanhado pelas **[Milestones](../../milestones)** e pelo board em **[Projects](../../projects)**.
 
-| Milestone | Entrega |
-|---|---|
-| M0 · Setup e fundamentação | 19/ago/2026 |
-| M1 · Implementação dos ataques | 26/ago/2026 |
-| M2 · Dados + detecção | 02/set/2026 |
-| M3 · Draft completo do artigo | 30/nov/2026 |
-| M4 · Revisão e finalização | 12/dez/2026 |
+| Fase | Período | Entrega |
+|---|---|---|
+| F1 · Consolidar repositório | 18–20/11/2026 | uma branch canônica (`develop`), pipeline único |
+| F2 · Corrigir pipeline | 21–27/11/2026 | protocolo held-out, FPR fixo, NCO pareado, testes |
+| F3 · Campanha experimental | 28/11–06/12/2026 | ≥ 5 seeds por ponto, manifesto por run |
+| F4 · Análise | 07–09/12/2026 | figuras e tabelas geradas por script único |
+| F5 · Escrita e revisão | 25/11–16/12/2026 | artigo / monografia |
+| Entrega | 18/12/2026 | TCC finalizado |
+
+---
+
+## Fluxo de branches
+
+- Todo trabalho é feito em **branches próprias** (`feat/...`, `fix/...`, `docs/...`) e entra por **PR para `develop`**.
+- `develop` é a branch de integração; vai para `main` **só em pontos de release**, com os testes verdes, e cada release recebe uma **tag**.
+- `main` é a **versão estável**: não recebe commits diretos.
 
 ---
 
