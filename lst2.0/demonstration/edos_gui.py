@@ -194,8 +194,10 @@ def index():
 @app.route('/api/defaults', methods=['GET'])
 def get_defaults():
     """Lê os padrões diretamente importando o edos_config.py (sem overrides aplicados)."""
-    # Remove overrides antigos se ficaram para trás por algum crash
-    if OVERRIDE_FILE.exists():
+    # Remove overrides antigos se ficaram para trás por algum crash -- mas não
+    # o da rodada em curso: abrir/recarregar a página durante um experimento
+    # apagava o arquivo que ele estava usando.
+    if OVERRIDE_FILE.exists() and not experiment_active:
         OVERRIDE_FILE.unlink()
         
     import importlib
@@ -242,6 +244,10 @@ def get_defaults():
             edos_config, 'PYDASH_MPD_FILE', 'manifest.mpd'),
         'PYDASH_MEDIA_URL_PATH': getattr(
             edos_config, 'PYDASH_MEDIA_URL_PATH', 'dash'),
+        'PYDASH_R2A_ALGORITHM': getattr(
+            edos_config, 'PYDASH_R2A_ALGORITHM', 'R2A_AverageThroughput'),
+        'PYDASH_TRAFFIC_SHAPING': getattr(
+            edos_config, 'PYDASH_TRAFFIC_SHAPING', False),
         'subnet': getattr(edos_config, 'subnet', '192.168.100.'),
         'mask': getattr(edos_config, 'mask', 24),
         'TARGET_PORT': getattr(edos_config, 'TARGET_PORT', 80)

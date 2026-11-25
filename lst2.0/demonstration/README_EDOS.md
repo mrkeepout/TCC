@@ -136,8 +136,10 @@ observado com tamanho não determinado; HTTPS/TLS não é inspecionado.
 > **Desligado por padrão** (`PYDASH_ENABLED = False` e sem entrada `pydash` no
 > `FLEET` padrão). Para ligar, siga os passos abaixo.
 
-O perfil `pydash` executa um checkout local do pyDash existente no host
-(`PYDASH_SOURCE_DIR`, sem valor padrão; ex.: `/caminho/para/pydash`) dentro de
+O perfil `pydash` simula um usuário assistindo a um vídeo em streaming DASH. Ele
+executa um checkout local do [pyDash](https://github.com/mfcaetano/pydash)
+(`git clone https://github.com/mfcaetano/pydash.git`;
+`PYDASH_SOURCE_DIR`, sem valor padrão; ex.: `/caminho/para/pydash`) dentro de
 um container com as dependências Python do player. O container é construído sob demanda a partir de
 `docker/pydash_client/Dockerfile` quando o perfil for selecionado.
 
@@ -166,7 +168,28 @@ FLEET = [
 PYDASH_ENABLED = True
 PYDASH_MPD_FILE = 'manifest.mpd'
 PYDASH_MEDIA_URL_PATH = 'dash/1sec'
+PYDASH_R2A_ALGORITHM = 'R2A_AverageThroughput'   # ABR adaptativo (padrão)
+PYDASH_TRAFFIC_SHAPING = False                   # rede simulada do pyDash desligada (padrão)
+EXPERIMENT_DURATION = 660                        # > duração do vídeo (~9min55s)
 ```
+
+**Algoritmo de adaptação e rede simulada.** O `dash_client.json` original do
+pyDash usa `R2AFixed` (sempre a qualidade máxima) e o próprio pyDash emula uma
+rede: após cada download ele dorme para seguir uma banda que alterna, a cada
+5 s, entre o maior, o intermediário e o menor bitrate do MPD. Com essa
+combinação o vídeo trava por construção (a banda média fica muito abaixo da
+qualidade pedida), e as pausas medidas não diriam nada sobre o ataque. Por isso
+o testbed, por padrão, desliga essa emulação (`PYDASH_TRAFFIC_SHAPING = False`,
+só a rede do testbed limita o player) e usa o ABR adaptativo
+`R2A_AverageThroughput` (`PYDASH_R2A_ALGORITHM`; também aceita `R2AFixed`,
+`R2ARandom` ou qualquer classe R2A do checkout). Ambos ficam na GUI, no bloco
+do perfil pyDash.
+
+**Duração.** O pyDash só grava seu próprio resumo quando o vídeo termina; o MPD
+Big Buck Bunny dura ~9min55s, então use `EXPERIMENT_DURATION` ≥ ~660 s (a GUI
+avisa quando a duração é menor). Se o experimento acabar antes, o teardown
+envia SIGTERM ao `pydash_runner.py`, que encerra o player e grava um resumo
+**parcial** (`completed: false`) com as pausas observadas até ali.
 
 Com `PYDASH_ENABLED = False`, qualquer entrada `pydash` no `FLEET` é ignorada e
 nenhum arquivo do pyDash é exigido. Lembre que `sudo` descarta variáveis de
@@ -176,16 +199,21 @@ O pyDash local usa HTTP na porta 80, espera `Representation@bandwidth` e
 `SegmentTemplate@media` com `$Bandwidth$`/`$Number$`, e deriva a duração do
 segmento de um componente de caminho como `1sec`. Use mídia finita para que o
 player conclua o download e grave seu resumo. O orquestrador copia o checkout
-sem `.git`/`venv`, preserva os parâmetros do `dash_client.json` local e aponta o
-player para o VIP e o MPD emulado. Apenas a cópia temporária do player recebe a
-correção de URL relativa necessária às requisições de segmento; o checkout do
-usuário não é alterado. O serviço valida o MPD pelo VIP antes de começar a
+sem `.git`/`venv`, preserva os demais parâmetros do `dash_client.json` local,
+aponta o player para o VIP e o MPD emulado e define o algoritmo R2A. Apenas a
+cópia temporária do player recebe os patches (URL relativa dos segmentos,
+eventos de pausa em tempo real e, se configurado, a emulação de rede
+desligada); o checkout do usuário não é alterado. Se a versão do pyDash não
+tiver exatamente as linhas que os patches esperam, o run falha em vez de rodar
+um player sem patch. O serviço valida o MPD pelo VIP antes de começar a
 captura.
 
 Após o run, cada player gera `flows/pydash_lN/pydash.log`,
 `pydash_events.csv`, `pydash_qoe.json` e os gráficos produzidos pelo pyDash.
-O resumo contém pausas reportadas pelo player, amostras de buffer (em segmentos)
-e throughput.
+O resumo (`pydash_qoe.json`) contém se a reprodução foi completa
+(`completed`), número de pausas e tempo total/médio parado, segmentos baixados,
+amostras de buffer (em segmentos) e throughput. A GUI mostra esses valores no
+card **QoE do streaming (pyDash)** dos resultados.
 Esses resultados devem ser analisados junto da QoS HTTP dos demais perfis e do
 `flows/hrf_events.jsonl`; as taxas HRF precisam de calibração com a distribuição
 de pedidos DASH real.
@@ -245,6 +273,8 @@ Ele recomenda `SCALE_UP_CONN = ponto de saturação × SCALE_TARGET_UTIL` (padr�
 | `PYDASH_ENABLED` / `PYDASH_SOURCE_DIR` | Habilita o perfil pyDash (padrão `False`) e aponta para o checkout local (variável de ambiente `PYDASH_SOURCE_DIR`) |
 | `PYDASH_MEDIA_DIR` / `PYDASH_MPD_FILE` | Diretório local de mídia DASH (variável de ambiente `PYDASH_MEDIA_DIR`) e MPD relativo a ele |
 | `PYDASH_MEDIA_URL_PATH` | Caminho em que os assets DASH são servidos nas réplicas |
+| `PYDASH_R2A_ALGORITHM` | Algoritmo ABR do pyDash: `R2A_AverageThroughput` (padrão, adaptativo), `R2AFixed`, `R2ARandom` |
+| `PYDASH_TRAFFIC_SHAPING` | Emulação de rede interna do pyDash; padrão `False` (só a rede do testbed limita o player) |
 | `HRF_ENABLED` | Ativa o registro HRF passivo no proxy de entrada (sem bloquear tráfego); padrão `False` |
 | `HRF_SIZE_THRESHOLD_BYTES` | Tamanho declarado/observado que encaminha pedido à análise HRF |
 | `HRF_REQUESTS_PER_SECOND_THRESHOLD` / `HRF_RATE_WINDOW_SECONDS` | Limite experimental por IP e janela móvel, não fornecidos pelo artigo |

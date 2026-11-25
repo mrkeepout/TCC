@@ -286,8 +286,13 @@ def load_pydash_qoe(flows_dir):
         clients.append({
             'client': client_name,
             'return_code': data.get('return_code'),
+            # False: the run ended before the video did (partial summary).
+            'completed': data.get('completed'),
+            'last_execution_time_seconds': data.get('last_execution_time_seconds'),
+            'segments_downloaded': data.get('segments_downloaded'),
             'pauses_number': data.get('pauses_number'),
             'average_pause_seconds': data.get('average_pause_seconds'),
+            'total_pause_seconds': data.get('total_pause_seconds'),
             'average_quality_index': data.get('average_quality_index'),
             'buffer_samples': data.get('buffer_samples', 0),
             'minimum_buffer_segments': data.get('minimum_buffer_segments'),
@@ -438,9 +443,12 @@ def _print_report(r):
               f"(IP-range labels)")
     pydash = r['pydash_qoe']
     for client in pydash['clients']:
-        print(f"  pyDash {client['client']}: "
+        playback = ('complete' if client['completed']
+                    else f"partial ({_fmt(client['last_execution_time_seconds'], 0)}s)")
+        print(f"  pyDash {client['client']}: playback={playback}, "
               f"pauses={client['pauses_number']}, "
               f"avg_pause={_fmt(client['average_pause_seconds'], 2)}s, "
+              f"total_pause={_fmt(client['total_pause_seconds'], 1)}s, "
               f"mean_throughput={_fmt(client['mean_throughput_bps'], 0)}bps")
 
 

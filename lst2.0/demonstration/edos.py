@@ -23,7 +23,6 @@
 import json
 import signal
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,6 +36,7 @@ from host import Host
 from switch import Switch
 from controller import Controller
 from cicflowmeter import CICFlowMeter
+from pydash_runner import check_r2a_algorithm, stage_pydash_source
 
 import edos_config as cfg
 import edos_labeling
@@ -176,6 +176,9 @@ def preparePydash() -> None:
     media_url_path = Path(cfg.PYDASH_MEDIA_URL_PATH)
     if media_url_path.is_absolute() or ".." in media_url_path.parts:
         raise ValueError("PYDASH_MEDIA_URL_PATH must be a relative URL path")
+    # Fail before building the topology, not when the first client starts.
+    check_r2a_algorithm(
+        source, getattr(cfg, 'PYDASH_R2A_ALGORITHM', 'R2A_AverageThroughput'))
 
     check = subprocess.run(
         ["docker", "image", "inspect", cfg.pydashclient],
@@ -199,29 +202,13 @@ def createPydashClient(node: Host, client_id: int) -> None:
     mpd_path = quote(Path(cfg.PYDASH_MPD_FILE).as_posix(), safe="/")
     mpd_url = f"http://{cfg.TARGET_VIP}/{media_url_path}/{mpd_path}"
 
-    with open(source / "dash_client.json", encoding="utf-8") as config_file:
-        dash_config = json.load(config_file)
-    dash_config["url_mpd"] = mpd_url
-
     with tempfile.TemporaryDirectory(prefix="lst-pydash-") as staging:
         staged = Path(staging) / "pydash"
-        shutil.copytree(
-            source, staged,
-            ignore=shutil.ignore_patterns(
-                ".git", "venv", "__pycache__", "*.pyc", "results"))
-        player_path = staged / "player" / "player.py"
-        player_source = player_path.read_text(encoding="utf-8")
-        original_path = "segment_request.add_path_name('/'.join(url_tokens[:len(url_tokens) - 1]))"
-        local_path = "segment_request.add_path_name('/' + '/'.join(url_tokens[3:-1]))"
-        if player_source.count(original_path) != 1:
-            raise RuntimeError(
-                "Unsupported pyDash Player.request_next_segment implementation; "
-                "cannot safely make its segment URLs relative")
-        player_path.write_text(
-            player_source.replace(original_path, local_path, 1),
-            encoding="utf-8")
-        (staged / "dash_client.json").write_text(
-            json.dumps(dash_config, indent=2) + "\n", encoding="utf-8")
+        stage_pydash_source(
+            source, staged, mpd_url=mpd_url,
+            r2a_algorithm=getattr(
+                cfg, 'PYDASH_R2A_ALGORITHM', 'R2A_AverageThroughput'),
+            traffic_shaping=getattr(cfg, 'PYDASH_TRAFFIC_SHAPING', False))
         subprocess.run(
             ["docker", "cp", str(staged) + "/.", f"{node.getNodeName()}:/home/pydash"],
             check=True, capture_output=True, text=True)
@@ -379,6 +366,25 @@ def writeManifest() -> None:
 
 
 # --- Teardown / reporting -------------------------------------------------
+def stopPydashClient(name: str, timeout: float = 15.0) -> None:
+    # The runner writes pydash_qoe.json only when the player stops. If the run
+    # ends before the video does, ask it to stop (SIGTERM) so it still writes
+    # a partial summary, and wait for that file before copying it out.
+    subprocess.run(
+        ["docker", "exec", name, "pkill", "-TERM", "-f", "/home/pydash_runner.py"],
+        capture_output=True, text=True)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        done = subprocess.run(
+            ["docker", "exec", name, "test", "-f", "/home/pydash_qoe.json"],
+            capture_output=True)
+        if done.returncode == 0:
+            return
+        time.sleep(0.5)
+    printTerm(f"[LST2.0][EDoS] WARNING: pyDash on {name} did not write its "
+              f"QoE summary within {timeout:.0f}s")
+
+
 def collectClientQoS():
     # Pull each benign client's per-request QoS log OUT of its container before
     # the container is destroyed -- otherwise the data (latency/success of the
@@ -387,6 +393,7 @@ def collectClientQoS():
         if not name.startswith('l'):
             continue
         if name in PYDASH_CLIENTS:
+            stopPydashClient(name)
             destination = Path('flows') / f'pydash_{name}'
             destination.mkdir(parents=True, exist_ok=True)
             for remote_name in (

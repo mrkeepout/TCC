@@ -166,8 +166,9 @@
                                 <button @click="removeFleetRow(i)" :disabled="isRunning || config.FLEET.length<=1" class="text-slate2-400 hover:text-red-500 px-2 disabled:opacity-30" title="Remover">✕</button>
                             </div>
                             <button @click="addFleetRow" :disabled="isRunning" class="text-sm text-teal-600 hover:text-teal-500 mt-1 disabled:opacity-40">+ Adicionar perfil</button>
-                            <p class="text-[11px] text-slate2-500 pt-1">Perfis: <b>mixed</b>, <b>browsing</b>, <b>mailing</b>, <b>printing</b> (HTTP/SURGE) ou <b>pydash</b> (streaming DASH adaptativo).</p>
-                            <div v-if="config.FLEET.some(r => r.profile==='pydash' && Number(r.count)>0)" class="mt-3 space-y-3 border-t border-cloud-200 pt-3">
+                            <p class="text-[11px] text-slate2-500 pt-1">Perfis: <b>mixed</b>, <b>browsing</b>, <b>mailing</b>, <b>printing</b> (HTTP/SURGE) ou <b>pydash</b> (usuário assistindo vídeo em streaming DASH).</p>
+                            <div v-if="pydashSelected" class="mt-3 space-y-3 border-t border-cloud-200 pt-3">
+                                <div class="text-xs font-semibold text-ink-900">🎬 Streaming pyDash</div>
                                 <label class="block text-xs text-slate2-700">Checkout pyDash no host
                                     <input v-model="config.PYDASH_SOURCE_DIR" :disabled="isRunning" class="field mt-1 w-full px-3 py-2" placeholder="/caminho/para/pydash">
                                 </label>
@@ -182,6 +183,19 @@
                                         <input v-model="config.PYDASH_MEDIA_URL_PATH" :disabled="isRunning" class="field mt-1 w-full px-3 py-2">
                                     </label>
                                 </div>
+                                <label class="block text-xs text-slate2-700">Algoritmo de adaptação (ABR)
+                                    <select v-model="config.PYDASH_R2A_ALGORITHM" :disabled="isRunning" class="field mt-1 w-full px-3 py-2">
+                                        <option v-for="a in R2A_ALGORITHMS" :value="a.value">{{ a.label }}</option>
+                                    </select>
+                                </label>
+                                <label class="flex items-start gap-2 text-xs text-slate2-700">
+                                    <input type="checkbox" v-model="config.PYDASH_TRAFFIC_SHAPING" :disabled="isRunning" class="accent-teal-500 w-4 h-4 mt-0.5">
+                                    <span>Rede simulada do pyDash (traffic shaping)<br>
+                                        <span class="text-[11px] text-slate2-500">Desligada, só a rede do testbed limita o vídeo e as pausas medidas refletem o ataque.</span></span>
+                                </label>
+                                <p v-if="pydashDurationShort" class="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1.5">
+                                    O vídeo dura ~10 min. Com duração de {{ config.EXPERIMENT_DURATION }}s o player é interrompido antes do fim e a QoE fica parcial. Use ≥ 660s.
+                                </p>
                             </div>
                         </div>
                     </section>
@@ -268,7 +282,7 @@
                     <section class="card p-6">
                         <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">⏱️ Duração</h2>
                         <div class="space-y-4">
-                            <num-field label="Duração automática (s)" v-model="config.EXPERIMENT_DURATION" :min="0" :max="600" :step="10" :disabled="isUnlimited || isRunning"></num-field>
+                            <num-field label="Duração automática (s)" v-model="config.EXPERIMENT_DURATION" :min="0" :max="1200" :step="10" :disabled="isUnlimited || isRunning"></num-field>
                             <label class="flex items-center gap-2 text-sm text-slate2-700">
                                 <input type="checkbox" v-model="isUnlimited" :disabled="isRunning" class="accent-teal-500 w-4 h-4">
                                 Sem limite (parar manualmente)
@@ -404,6 +418,30 @@
                             Sucesso sob pulso de ataque: <b>{{ (current.metrics.qos.success_rate_attack_on*100).toFixed(0) }}%</b> (ON)
                             vs <b>{{ (current.metrics.qos.success_rate_attack_off*100).toFixed(0) }}%</b> (OFF) — o dano colateral ao usuário legítimo.
                         </p>
+                    </section>
+
+                    <!-- pyDash streaming QoE, one row per player -->
+                    <section v-if="current.metrics && current.metrics.pydash_qoe && current.metrics.pydash_qoe.client_count" class="card p-6">
+                        <h2 class="font-semibold text-ink-900 flex items-center gap-2 mb-4 pb-3 border-b border-cloud-200">🎬 QoE do streaming (pyDash)</h2>
+                        <div v-for="c in current.metrics.pydash_qoe.clients" :key="c.client" class="mb-4 last:mb-0">
+                            <div class="text-sm font-semibold text-ink-900 mb-2">{{ c.client }}
+                                <span v-if="c.completed" class="ml-2 text-[11px] font-normal text-teal-700 bg-teal-50 rounded px-1.5 py-0.5">vídeo completo</span>
+                                <span v-else class="ml-2 text-[11px] font-normal text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">parcial — interrompido em {{ c.last_execution_time_seconds != null ? c.last_execution_time_seconds.toFixed(0) + 's' : '—' }}</span>
+                            </div>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div><div class="text-xs text-slate2-500">Pausas (rebuffering)</div>
+                                    <div class="text-2xl font-bold text-ink-900">{{ c.pauses_number != null ? c.pauses_number : '—' }}</div>
+                                    <div class="text-[11px] text-slate2-500">{{ c.total_pause_seconds != null ? c.total_pause_seconds.toFixed(1) + 's parado no total' : '' }}</div></div>
+                                <div><div class="text-xs text-slate2-500">Pausa média</div>
+                                    <div class="text-2xl font-bold text-ink-900">{{ c.average_pause_seconds != null ? c.average_pause_seconds.toFixed(2) + 's' : '—' }}</div></div>
+                                <div><div class="text-xs text-slate2-500">Throughput médio</div>
+                                    <div class="text-2xl font-bold text-ink-900">{{ c.mean_throughput_bps != null ? (c.mean_throughput_bps/1e6).toFixed(2) + ' Mbps' : '—' }}</div>
+                                    <div class="text-[11px] text-slate2-500">{{ c.segments_downloaded != null ? c.segments_downloaded + ' segmentos baixados' : '' }}</div></div>
+                                <div><div class="text-xs text-slate2-500">Buffer mínimo</div>
+                                    <div class="text-2xl font-bold text-ink-900">{{ c.minimum_buffer_segments != null ? c.minimum_buffer_segments + ' seg' : '—' }}</div>
+                                    <div class="text-[11px] text-slate2-500" v-if="c.average_quality_index != null">QI médio {{ c.average_quality_index.toFixed(1) }}</div></div>
+                            </div>
+                        </div>
                     </section>
 
                     <!-- One figure, shared time axis: attack -> autoscaler reaction -> bill -->
@@ -547,9 +585,17 @@
                 HRF_RATE_WINDOW_SECONDS: 1,
                 PYDASH_SOURCE_DIR: '',
                 PYDASH_MEDIA_DIR: '', PYDASH_MPD_FILE: 'manifest.mpd',
-                PYDASH_MEDIA_URL_PATH: 'dash'
+                PYDASH_MEDIA_URL_PATH: 'dash',
+                PYDASH_R2A_ALGORITHM: 'R2A_AverageThroughput', PYDASH_TRAFFIC_SHAPING: false
             });
             const PROFILES = ['mixed', 'browsing', 'mailing', 'printing', 'pydash'];
+            const R2A_ALGORITHMS = [
+                { value: 'R2A_AverageThroughput', label: 'Adaptativo (média do throughput)' },
+                { value: 'R2AFixed', label: 'Fixo (sempre a qualidade máxima)' },
+                { value: 'R2ARandom', label: 'Aleatório' },
+            ];
+            // Approximate length of the default Big Buck Bunny MPD plus startup.
+            const PYDASH_VIDEO_SECONDS = 660;
             const fleetTotal = computed(() =>
                 (config.FLEET || []).reduce((s, r) => s + (Number(r.count) || 0), 0));
 
@@ -583,6 +629,11 @@
             };
             const removeFleetRow = (i) => { config.FLEET.splice(i, 1); };
             const isUnlimited = ref(false);
+            const pydashSelected = computed(() => (config.FLEET || []).some(
+                r => r.profile === 'pydash' && Number(r.count) > 0));
+            const pydashDurationShort = computed(() => pydashSelected.value && !isUnlimited.value
+                && Number(config.EXPERIMENT_DURATION) > 0
+                && Number(config.EXPERIMENT_DURATION) < PYDASH_VIDEO_SECONDS);
             const current = ref(null);
             const history = ref([]);
             const runKind = ref('experiment');      // what the live log/stream is for
@@ -727,12 +778,12 @@
                 if (!config.FLEET) return toast('Configure o tráfego benigno', 'error'), false;
                 if (fleetTotal.value > 49) return toast('Máximo de 49 clientes benignos (faixa de IP .51-.99)', 'error'), false;
                 if (config.NUM_ATTACKERS > 152) return toast('Máximo de 152 atacantes (faixa de IP .103-.254)', 'error'), false;
-                const pydashSelected = config.FLEET.some(
-                    r => r.profile === 'pydash' && Number(r.count) > 0);
-                if (pydashSelected && !config.PYDASH_SOURCE_DIR)
+                if (pydashSelected.value && !config.PYDASH_SOURCE_DIR)
                     return toast('Informe o diretório do checkout local do pyDash', 'error'), false;
-                if (pydashSelected && !config.PYDASH_MEDIA_DIR)
+                if (pydashSelected.value && !config.PYDASH_MEDIA_DIR)
                     return toast('Informe o diretório local com a mídia DASH', 'error'), false;
+                if (pydashDurationShort.value)
+                    toast('Duração menor que o vídeo: a QoE do pyDash será parcial', 'info');
                 return true;
             };
 
@@ -744,8 +795,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             ...config,
-                            PYDASH_ENABLED: config.FLEET.some(
-                                r => r.profile === 'pydash' && Number(r.count) > 0)
+                            PYDASH_ENABLED: pydashSelected.value
                         }) });
                     if (res.ok) { status.value = 'running'; toast('Experimento iniciado', 'success'); startLogStream(); }
                     else toast((await res.json()).error || 'Erro ao iniciar', 'error');
@@ -980,6 +1030,7 @@
                 chartTimeline, chartCompare, fmtCost, modeLabel, attackDesc, underAttack,
                 startExperiment, stopExperiment, goResults, goHistory, loadHistory, openRun,
                 PROFILES, fleetTotal, addFleetRow, removeFleetRow,
+                R2A_ALGORITHMS, pydashSelected, pydashDurationShort,
                 cloudProfiles, selectedCloud, CLOUD_LABELS, cloudKeys, applyCloud,
                 runKind, benchmarkResult, runBenchmark, applyBenchmark,
                 chartLive, hasLive, live, yoyoWarning,

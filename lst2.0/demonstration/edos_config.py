@@ -94,6 +94,18 @@ PYDASH_MEDIA_DIR = os.environ.get('PYDASH_MEDIA_DIR', '')
 PYDASH_MPD_FILE = 'BigBuckBunny_1s_simple_2014_05_09.mpd'
 PYDASH_MEDIA_URL_PATH = 'dash/1sec'
 PYDASH_BUILD_IMAGE = True
+# ABR (R2A) algorithm the player uses, by pyDash class name: R2A_AverageThroughput
+# (adapts quality to the measured throughput) | R2AFixed (always the top
+# quality) | R2ARandom. Any R2A class added to the checkout's r2a/ also works.
+PYDASH_R2A_ALGORITHM = 'R2A_AverageThroughput'
+# pyDash ships its own network emulation: it sleeps after each download, cycling
+# every 5 s through bandwidths taken from the MPD (top, middle and lowest
+# bitrate). With it on, stalls come from that synthetic profile and not from the
+# attack, so it is OFF by default and the testbed network is the only limit.
+PYDASH_TRAFFIC_SHAPING = False
+# The Big Buck Bunny MPD above lasts ~9 min 55 s. pyDash only writes its own QoE
+# summary when the video ends, so set EXPERIMENT_DURATION >= ~660 s to watch it
+# to the end; a shorter run still yields a partial summary (completed=false).
 
 # Fallback: if FLEET is empty, fall back to NUM_CLIENTS homogeneous 'browsing'
 # clients so the old behaviour (a plain client count) still works.
